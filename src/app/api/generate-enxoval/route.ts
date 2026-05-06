@@ -57,10 +57,7 @@ async function uploadPdfBuffer(
   const fullUrl = presignedUrl.split("?")[0];
   const m = fullUrl.match(/\.amazonaws\.com\/(.+)$/);
   if (!m) throw new Error("URL inválida");
-  // O Pipefy hoje retorna paths "orgs/{uuid}/uploads/{uuid}/file.pdf",
-  // mas o campo attachment só renderiza corretamente quando é "uploads/{uuid}/file.pdf"
-  // (formato dos registros legados). Sem strip o usuário ve "Permission denied / Repo not found".
-  return m[1].replace(/^orgs\/[^/]+\//, "");
+  return m[1];
 }
 
 function todayBR(): string {
@@ -115,8 +112,9 @@ async function createTableRecord(
     { id: "capa_edredom_queen_size", v: String(ag["CAPA EDREDOM QUEEN"] ?? 0) },
     { id: "capa_edredom_king_size", v: String(ag["CAPA EDREDOM KING"] ?? 0) },
     { id: "valida_o_da_marca_do_enxoval", v: "0" },
-    // attachment com is_multiple=True precisa de array; mandar como array sempre.
-    { id: "comprovante_de_compra_do_propriet_rio", v: [filePath] as string[] },
+    // String (não array): formato que process-card e submit-pipefy sempre usaram com sucesso.
+    // Array fazia o Pipefy Web servir o path stripped sob "start-form-attachments/{cardId}/..." → 404.
+    { id: "comprovante_de_compra_do_propriet_rio", v: filePath },
   ];
 
   const fieldsStr = fields
