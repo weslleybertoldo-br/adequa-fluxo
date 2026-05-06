@@ -286,6 +286,27 @@ type VistoriaCardOpt = {
   kits: Record<string, number>;
 };
 
+// Mapa cod → label dos ambientes/kits do PIPE 3 (espelha KITS em src/lib/enxoval/calc.ts)
+const KIT_LABELS: Array<{ cod: string; label: string }> = [
+  { cod: "0.1", label: "Cama Solteiro" },
+  { cod: "0.2", label: "Cama Casal" },
+  { cod: "0.3", label: "Cama Queen" },
+  { cod: "0.4", label: "Cama King" },
+  { cod: "0.5", label: "Sofá-cama solteiro" },
+  { cod: "0.6", label: "Sofá-cama casal" },
+  { cod: "0.7", label: "Banheiros" },
+  { cod: "0.8", label: "Lavabos" },
+  { cod: "0.9", label: "Jacuzzis/Banheira" },
+  { cod: "0.10", label: "Cozinhas" },
+  { cod: "0.11", label: "Toalha Maquiagem" },
+];
+
+type KitsLoad =
+  | { status: "loading" }
+  | { status: "ok"; kits: Record<string, number>; multiple: boolean; count: number }
+  | { status: "empty" }
+  | { status: "error"; message: string };
+
 function TabProcessamento() {
   const [cards, setCards] = useState<EnxovalCard[]>([]);
   const [loading, setLoading] = useState(false);
@@ -304,6 +325,10 @@ function TabProcessamento() {
   // Por linha: modo selecionado e (no modo anexo) o path do PDF escolhido
   const [rowMode, setRowMode] = useState<Record<string, ProcessMode>>({});
   const [rowAttachment, setRowAttachment] = useState<Record<string, string>>({}); // code -> attachment.path
+  // Cache de kits (configuracao do imovel) por codigo, lazy-loaded do PIPE 3
+  const [kitsByCode, setKitsByCode] = useState<Record<string, KitsLoad>>({});
+  // Conjunto de codigos ja em fetch — evita re-disparar quando setState refresca o effect
+  const kitsInFlightRef = useRef<Set<string>>(new Set());
 
   const loadCards = async () => {
     setLoading(true);
@@ -336,6 +361,63 @@ function TabProcessamento() {
       setLoading(false);
     }
   };
+
+  // Lazy-load kits do PIPE 3 pra cada card que ainda nao tem registro.
+  // Evita chamada quando hasRecord (ja processado), ja em cache ou ja em flight.
+  useEffect(() => {
+    const inFlight = kitsInFlightRef.current;
+    const pending = cards
+      .filter((c) => !c.hasRecord && !kitsByCode[c.title] && !inFlight.has(c.title))
+      .slice(0, 8); // throttle: max 8 paralelas por ciclo
+    if (pending.length === 0) return;
+    for (const c of pending) inFlight.add(c.title);
+    setKitsByCode((prev) => {
+      const next = { ...prev };
+      for (const c of pending) next[c.title] = { status: "loading" };
+      return next;
+    });
+    for (const c of pending) {
+      const code = c.title;
+      (async () => {
+        try {
+          const res = await fetch("/api/list-vistoria-cards", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ code }),
+          });
+          const data = await res.json();
+          let load: KitsLoad;
+          if (!res.ok || !data.success) {
+            load = { status: "error", message: data.error || `HTTP ${res.status}` };
+          } else {
+            const list = (data.cards as Array<{ id: string; kits: Record<string, number>; dataAgendamento: string | null }>) || [];
+            // Ordena: mais recente primeiro (data desc, fallback id numerico desc)
+            const sorted = [...list].sort((a, b) => {
+              const da = a.dataAgendamento ? Date.parse(a.dataAgendamento) : NaN;
+              const db = b.dataAgendamento ? Date.parse(b.dataAgendamento) : NaN;
+              if (Number.isFinite(da) && Number.isFinite(db) && da !== db) return db - da;
+              if (Number.isFinite(db) && !Number.isFinite(da)) return 1;
+              if (Number.isFinite(da) && !Number.isFinite(db)) return -1;
+              const ia = Number(a.id), ib = Number(b.id);
+              if (Number.isFinite(ia) && Number.isFinite(ib)) return ib - ia;
+              return 0;
+            });
+            load = sorted.length === 0
+              ? { status: "empty" }
+              : { status: "ok", kits: sorted[0].kits, multiple: sorted.length > 1, count: sorted.length };
+          }
+          setKitsByCode((prev) => ({ ...prev, [code]: load }));
+        } catch (e) {
+          setKitsByCode((prev) => ({
+            ...prev,
+            [code]: { status: "error", message: e instanceof Error ? e.message : String(e) },
+          }));
+        } finally {
+          inFlight.delete(code);
+        }
+      })();
+    }
+  }, [cards, kitsByCode]);
 
   const generateEnxoval = async (
     code: string,
@@ -562,6 +644,17 @@ function TabProcessamento() {
                       {!c.hasRecord && !cardStatus && (
                         <span className="text-xs text-red-500 ml-2">Sem registro</span>
                       )}
+                      {!c.hasRecord && !cardStatus && (() => {
+                        const kl = kitsByCode[c.title];
+                        if (kl?.status === "ok" && kl.multiple) {
+                          return (
+                            <span className="text-xs text-amber-600 ml-2" title="Mais de uma vistoria — usando a mais recente">
+                              ⚠️ {kl.count} vistorias (usando a mais recente)
+                            </span>
+                          );
+                        }
+                        return null;
+                      })()}
                       {cardStatus && (
                         <span className={`text-xs ml-2 ${cardStatus.status === "success" ? "text-green-600" : "text-red-600"}`}>
                           {cardStatus.message}
@@ -597,48 +690,85 @@ function TabProcessamento() {
                   </div>
                 </div>
 
-                {/* Modos de processamento */}
-                {!c.hasRecord && !cardStatus?.status && (
-                  <div className="mt-3 pl-9 flex flex-col gap-1.5 text-sm">
-                    <label className="flex items-center gap-2">
-                      <input
-                        type="radio"
-                        name={`mode-${c.id}`}
-                        checked={mode === "anexo"}
-                        disabled={!hasAttachments}
-                        onChange={() => setRowMode((p) => ({ ...p, [c.title]: "anexo" }))}
-                      />
-                      <span className={hasAttachments ? "" : "text-gray-400"}>Usar PDF anexado</span>
-                      <select
-                        value={selectedAttachment}
-                        onChange={(e) => {
-                          setRowAttachment((p) => ({ ...p, [c.title]: e.target.value }));
-                          setRowMode((p) => ({ ...p, [c.title]: "anexo" }));
-                        }}
-                        disabled={!hasAttachments || mode !== "anexo"}
-                        className="text-xs px-2 py-1 border rounded bg-white disabled:bg-gray-100 disabled:text-gray-400 max-w-xs"
-                      >
-                        {!hasAttachments && <option value="">Sem anexos PDF</option>}
-                        {hasAttachments && <option value="">— selecione —</option>}
-                        {c.attachments.map((a) => (
-                          <option key={a.path} value={a.path}>
-                            {a.fileName}
-                            {c.defaultPdf?.path === a.path ? " ★" : ""}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label className="flex items-center gap-2">
-                      <input
-                        type="radio"
-                        name={`mode-${c.id}`}
-                        checked={mode === "vistoria"}
-                        onChange={() => setRowMode((p) => ({ ...p, [c.title]: "vistoria" }))}
-                      />
-                      <span>Gerar do card de Vistorias (PIPE 3)</span>
-                    </label>
-                  </div>
-                )}
+                {/* Configuração do imóvel + Modos de processamento — lado a lado */}
+                {!c.hasRecord && !cardStatus?.status && (() => {
+                  const kload = kitsByCode[c.title];
+                  const renderConfig = () => {
+                    if (!kload) return null;
+                    if (kload.status === "loading") {
+                      return <div className="text-xs text-gray-400">Carregando configuração…</div>;
+                    }
+                    if (kload.status === "empty") {
+                      return <div className="text-xs text-amber-600">Sem card de Vistoria no PIPE 3 para esse código.</div>;
+                    }
+                    if (kload.status === "error") {
+                      return <div className="text-xs text-red-500">Falha ao buscar configuração: {kload.message}</div>;
+                    }
+                    const items = KIT_LABELS.map((k) => ({ ...k, qty: kload.kits[k.cod] ?? 0 })).filter((k) => k.qty > 0);
+                    if (items.length === 0) {
+                      return <div className="text-xs text-amber-600">Configuração vazia no card de Vistoria.</div>;
+                    }
+                    return (
+                      <div className="text-xs text-gray-600">
+                        <div className="font-medium text-gray-500 mb-0.5">
+                          Configuração do imóvel:
+                        </div>
+                        <ul className="flex flex-col gap-0.5">
+                          {items.map((k) => (
+                            <li key={k.cod}>
+                              <span>{k.label}</span>
+                              <span className="ml-2 font-mono tabular-nums">{k.qty}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    );
+                  };
+                  return (
+                    <div className="mt-2 pl-9 flex flex-row gap-6 items-start">
+                      <div className="flex-1 min-w-0">{renderConfig()}</div>
+                      <div className="flex flex-col gap-1.5 text-sm">
+                        <label className="flex items-center gap-2">
+                          <input
+                            type="radio"
+                            name={`mode-${c.id}`}
+                            checked={mode === "anexo"}
+                            disabled={!hasAttachments}
+                            onChange={() => setRowMode((p) => ({ ...p, [c.title]: "anexo" }))}
+                          />
+                          <span className={hasAttachments ? "" : "text-gray-400"}>Usar PDF anexado</span>
+                          <select
+                            value={selectedAttachment}
+                            onChange={(e) => {
+                              setRowAttachment((p) => ({ ...p, [c.title]: e.target.value }));
+                              setRowMode((p) => ({ ...p, [c.title]: "anexo" }));
+                            }}
+                            disabled={!hasAttachments || mode !== "anexo"}
+                            className="text-xs px-2 py-1 border rounded bg-white disabled:bg-gray-100 disabled:text-gray-400 max-w-xs"
+                          >
+                            {!hasAttachments && <option value="">Sem anexos PDF</option>}
+                            {hasAttachments && <option value="">— selecione —</option>}
+                            {c.attachments.map((a) => (
+                              <option key={a.path} value={a.path}>
+                                {a.fileName}
+                                {c.defaultPdf?.path === a.path ? " ★" : ""}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="flex items-center gap-2">
+                          <input
+                            type="radio"
+                            name={`mode-${c.id}`}
+                            checked={mode === "vistoria"}
+                            onChange={() => setRowMode((p) => ({ ...p, [c.title]: "vistoria" }))}
+                          />
+                          <span>Gerar do card de Vistorias (PIPE 3)</span>
+                        </label>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             );
           })}
