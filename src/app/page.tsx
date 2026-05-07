@@ -793,6 +793,19 @@ function TabProcessamento() {
                       const code = vistoriaPicker.code;
                       const id = v.id;
                       setVistoriaPicker(null);
+                      // Preserva o modo "anexo" + PDF escolhido na linha:
+                      // sem isso, ao escolher a vistoria o backend gera um PDF novo
+                      // em vez de reusar o anexo que o usuário selecionou.
+                      const mode = rowMode[code];
+                      if (mode === "anexo") {
+                        const card = cards.find((c) => c.title === code);
+                        const path = rowAttachment[code];
+                        const att = card?.attachments.find((a) => a.path === path);
+                        if (att) {
+                          generateEnxoval(code, { vistoriaCardId: id, attachment: att });
+                          return;
+                        }
+                      }
                       generateEnxoval(code, { vistoriaCardId: id });
                     }}
                     className="w-full text-left px-4 py-3 border rounded-md hover:bg-blue-50 hover:border-blue-300 transition-colors"
