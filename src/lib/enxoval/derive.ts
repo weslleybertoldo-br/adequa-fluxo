@@ -152,6 +152,23 @@ function isCapital(staysCapital: string | null): boolean {
   return (staysCapital ?? "").trim().toLowerCase() === "sim";
 }
 
+// Tenta achar a franquia em base-franquias.json:
+// 1) exato, 2) case-insensitive, 3) prefixo único (cobre nome truncado tipo "Luila" → "Luila Chiste Lage").
+function resolveFranquia(
+  nome: string
+): { nome: string; info: FranquiaInfo } | null {
+  const trimmed = nome.trim();
+  if (!trimmed) return null;
+  if (FRANQUIA[trimmed]) return { nome: trimmed, info: FRANQUIA[trimmed] };
+  const lower = trimmed.toLowerCase();
+  const keys = Object.keys(FRANQUIA);
+  const ci = keys.find((k) => k.toLowerCase() === lower);
+  if (ci) return { nome: ci, info: FRANQUIA[ci] };
+  const prefix = keys.filter((k) => k.toLowerCase().startsWith(lower));
+  if (prefix.length === 1) return { nome: prefix[0], info: FRANQUIA[prefix[0]] };
+  return null;
+}
+
 /**
  * Constrói o snapshot completo a partir do código + cardId vistoria.
  * Tudo derivado: proprietário, franquia, cluster, fornecedor, frete, valores.
@@ -175,18 +192,21 @@ export async function deriveEnxovalSnapshot(
     documento: "",
   };
 
-  // Anfitrião/franquia: primeiro preferimos o do card vistoria;
-  // fallback para a tabela Imóvel <> Anfitrião.
-  const nomeFranquia =
-    (card.responsavel ?? "").trim() ||
-    (ANFITRIAO[codigo]?.anfitriao ?? "").trim();
-
-  const franquiaInfo = nomeFranquia ? FRANQUIA[nomeFranquia] : undefined;
-  if (!franquiaInfo) {
+  // Anfitrião/franquia: tenta resolver pelo nome do card vistoria; se vier
+  // truncado/diferente do registrado em base-franquias, cai pra ANFITRIAO[codigo]
+  // (nome canônico) e por fim pra match case-insensitive/prefixo único.
+  const nomeCard = (card.responsavel ?? "").trim();
+  const nomeAnfitriao = (ANFITRIAO[codigo]?.anfitriao ?? "").trim();
+  const resolved =
+    resolveFranquia(nomeCard) || resolveFranquia(nomeAnfitriao);
+  if (!resolved) {
+    const tentado = nomeCard || nomeAnfitriao || "(vazia)";
     throw new Error(
-      `Franquia "${nomeFranquia || "(vazia)"}" não encontrada na Base franquias para o imóvel ${codigo}.`
+      `Franquia "${tentado}" não encontrada na Base franquias para o imóvel ${codigo}.`
     );
   }
+  const nomeFranquia = resolved.nome;
+  const franquiaInfo = resolved.info;
 
   const stays = pickStaysInfo(franquiaInfo.cidade, franquiaInfo.uf);
   const capital = isCapital(stays.capital);
