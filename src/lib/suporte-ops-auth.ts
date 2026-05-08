@@ -2,12 +2,14 @@
 // Token storage + auto-refresh do Supabase do suporte-ops.seazone.properties
 // ========================
 // O site usa Google OAuth via Supabase Auth, JWT expira em 1h.
-// Persistimos { access_token, refresh_token, expires_at } em arquivo local
-// e refreshamos automaticamente quando faltam <60s pra expirar.
+// Persistimos { access_token, refresh_token, expires_at } e refreshamos
+// automaticamente quando faltam <60s pra expirar.
 //
-// Local: arquivo `.suporte-ops-token.json` na raiz do projeto (gitignored).
-// Em prod (Vercel) o filesystem eh ephemeral — usar SUPORTE_OPS_REFRESH_TOKEN
-// como env var (long-lived, ~30 dias) e cachear o access_token em memoria.
+// - Local (next dev): arquivo `.suporte-ops-token.json` na raiz (gitignored)
+// - Vercel: `/tmp/.suporte-ops-token.json` (writable mas ephemeral — clear em
+//   cold start). MemoryCache cobre warm; em cold start o user re-bootstrapa.
+// - Falha silenciosa em writeFile (ex: filesystem RO em outro provider) NAO
+//   derruba o request — memoryCache ainda funciona pra essa instancia.
 
 import fs from "fs/promises";
 import path from "path";
@@ -19,7 +21,9 @@ const SUPA_ANON =
   process.env.SUPORTE_OPS_SUPABASE_ANON_KEY ||
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ4anBuYW1vYWZ6b21xbG5jZHluIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUwNzM0MTAsImV4cCI6MjA5MDY0OTQxMH0.69uyyWzQGxeeSx9dhH8GWAhUZfFIgXvW-vbCCiqvEXA";
 
-const TOKEN_FILE = path.join(process.cwd(), ".suporte-ops-token.json");
+const TOKEN_FILE = process.env.VERCEL
+  ? "/tmp/.suporte-ops-token.json"
+  : path.join(process.cwd(), ".suporte-ops-token.json");
 
 export interface SuporteOpsToken {
   access_token: string;
@@ -52,10 +56,18 @@ async function readFromDisk(): Promise<SuporteOpsToken | null> {
 }
 
 async function writeToDisk(token: SuporteOpsToken): Promise<void> {
-  await fs.writeFile(TOKEN_FILE, JSON.stringify(token, null, 2), {
-    encoding: "utf-8",
-    mode: 0o600,
-  });
+  try {
+    await fs.writeFile(TOKEN_FILE, JSON.stringify(token, null, 2), {
+      encoding: "utf-8",
+      mode: 0o600,
+    });
+  } catch (e) {
+    // EROFS em provider sem filesystem writable nao deve derrubar refresh —
+    // memoryCache (warm container) cobre. Em cold start o user re-bootstrapa.
+    console.warn(
+      `[suporte-ops-auth] writeFile falhou (token so em memoria): ${e instanceof Error ? e.message : String(e)}`
+    );
+  }
 }
 
 async function loadToken(): Promise<SuporteOpsToken | null> {
