@@ -3412,43 +3412,24 @@ function FormOcorrenciaDireta({
 }) {
   const [open, setOpen] = useState(false);
 
-  // Token state
-  const [tokenStatus, setTokenStatus] = useState<{ has_token: boolean; valid: boolean; expires_in_seconds?: number; email?: string; full_name?: string } | null>(null);
-  const [refreshingToken, setRefreshingToken] = useState(false);
-  const [showBootstrap, setShowBootstrap] = useState(false);
-  const [tokenAccessInput, setTokenAccessInput] = useState("");
-  const [tokenRefreshInput, setTokenRefreshInput] = useState("");
-  const [tokenMsg, setTokenMsg] = useState<string | null>(null);
-
-  // Form state
   const [envolveImovel, setEnvolveImovel] = useState(true);
   const [codigo, setCodigo] = useState(initialCodigo);
   const [franquiaNome, setFranquiaNome] = useState(initialFranquia);
   const [areaOrigem, setAreaOrigem] = useState<string>("Implantação");
   const [descricao, setDescricao] = useState(initialDescricao);
-  const [linkChamado, setLinkChamado] = useState("");
   const [subcategoriaId, setSubcategoriaId] = useState<string>("");
   const [evidencia, setEvidencia] = useState<File | null>(null);
 
-  // Dropdowns data
   const [subcategorias, setSubcategorias] = useState<Subcat[]>([]);
   const [franquias, setFranquias] = useState<Franquia[]>([]);
   const [loadingDropdowns, setLoadingDropdowns] = useState(false);
 
-  // Submit
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState<{ success: boolean; message: string; url?: string } | null>(null);
 
   useEffect(() => { setCodigo(initialCodigo); }, [initialCodigo]);
   useEffect(() => { setFranquiaNome(initialFranquia); }, [initialFranquia]);
   useEffect(() => { setDescricao(initialDescricao); }, [initialDescricao]);
-
-  const carregarStatusToken = async () => {
-    try {
-      const r = await fetch("/api/lovable/token");
-      if (r.ok) setTokenStatus(await r.json());
-    } catch { /* silencioso */ }
-  };
 
   const carregarDropdowns = async () => {
     setLoadingDropdowns(true);
@@ -3457,82 +3438,24 @@ function FormOcorrenciaDireta({
         fetch("/api/lovable/subcategorias"),
         fetch("/api/lovable/franquias"),
       ]);
-      if (rs.ok) setSubcategorias(await rs.json());
+      if (rs.ok) {
+        const subs: Subcat[] = await rs.json();
+        setSubcategorias(subs);
+        // Pre-seleciona "3.2 — Não responder demandas Sults/Sapron por +2 dias"
+        if (!subcategoriaId) {
+          const def = subs.find((s) => s.codigo === "3.2");
+          if (def) setSubcategoriaId(def.id);
+        }
+      }
       if (rf.ok) setFranquias(await rf.json());
     } catch { /* silencioso */ }
     finally { setLoadingDropdowns(false); }
   };
 
   useEffect(() => {
-    if (!open) return;
-    carregarStatusToken();
-    const t = setInterval(carregarStatusToken, 30_000);
-    return () => clearInterval(t);
-  }, [open]);
-
-  useEffect(() => {
-    if (open && tokenStatus?.valid && subcategorias.length === 0) {
-      carregarDropdowns();
-    }
+    if (open && subcategorias.length === 0) carregarDropdowns();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, tokenStatus?.valid]);
-
-  const refreshToken = async () => {
-    setRefreshingToken(true);
-    setTokenMsg(null);
-    try {
-      const r = await fetch("/api/lovable/token/refresh", { method: "POST" });
-      const d = await r.json();
-      if (r.ok) {
-        setTokenStatus(d);
-        setTokenMsg(`✅ Token atualizado — expira em ${Math.round((d.expires_in_seconds || 0) / 60)}min`);
-      } else {
-        setTokenMsg(`❌ ${d.error || "Erro"}`);
-      }
-    } finally {
-      setRefreshingToken(false);
-    }
-  };
-
-  const salvarToken = async () => {
-    setTokenMsg(null);
-    const accessRaw = tokenAccessInput.trim();
-    const refreshRaw = tokenRefreshInput.trim();
-    if (!accessRaw || !refreshRaw) {
-      setTokenMsg("❌ Preencha access_token e refresh_token");
-      return;
-    }
-    let body: any = { access_token: accessRaw, refresh_token: refreshRaw };
-    if (accessRaw.startsWith("{")) {
-      try { body = JSON.parse(accessRaw); } catch { /* string */ }
-    }
-    try {
-      const r = await fetch("/api/lovable/token", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const d = await r.json();
-      if (r.ok) {
-        setTokenMsg(`✅ Token salvo (${d.full_name || d.email || d.user_id})`);
-        setTokenAccessInput(""); setTokenRefreshInput("");
-        setShowBootstrap(false);
-        carregarStatusToken();
-        setTimeout(carregarDropdowns, 300);
-      } else {
-        setTokenMsg(`❌ ${d.error || "Erro"}`);
-      }
-    } catch (e) {
-      setTokenMsg(`❌ ${e instanceof Error ? e.message : String(e)}`);
-    }
-  };
-
-  const limparToken = async () => {
-    if (!confirm("Apagar token do lovable?")) return;
-    await fetch("/api/lovable/token", { method: "DELETE" });
-    setTokenStatus({ has_token: false, valid: false });
-    setTokenMsg("Token apagado");
-  };
+  }, [open]);
 
   const subcatSelecionada = subcategorias.find((s) => s.id === subcategoriaId);
 
@@ -3546,14 +3469,13 @@ function FormOcorrenciaDireta({
     setSending(true); setResult(null);
     try {
       const fd = new FormData();
-      fd.append("email", tokenStatus?.email || "");
-      fd.append("full_name", tokenStatus?.full_name || "");
+      fd.append("email", "weslley.bertoldo@seazone.com.br");
+      fd.append("full_name", "Weslley Bertoldo da Silva");
       fd.append("envolve_imovel", String(envolveImovel));
       fd.append("codigo_imovel", codigo.trim().toUpperCase());
       fd.append("franquia_nome", franquiaNome.trim());
       fd.append("area_origem", areaOrigem);
       fd.append("descricao", descricao.trim());
-      fd.append("link_chamado", linkChamado.trim());
       if (subcatSelecionada) {
         fd.append("subcategoria_codigo", subcatSelecionada.codigo);
         fd.append("subcategoria_descricao", subcatSelecionada.descricao);
@@ -3567,9 +3489,6 @@ function FormOcorrenciaDireta({
       const d = await r.json();
       if (d.success) {
         setResult({ success: true, message: `Ocorrência registrada (${d.id?.slice(0, 8)}...)`, url: d.url });
-      } else if (d.needs_token_bootstrap) {
-        setResult({ success: false, message: "Sem token lovable — cadastre abaixo" });
-        setShowBootstrap(true);
       } else {
         setResult({ success: false, message: d.error || "Erro" });
       }
@@ -3581,7 +3500,6 @@ function FormOcorrenciaDireta({
   };
 
   const podeEnviar =
-    tokenStatus?.valid &&
     franquiaNome.trim() &&
     descricao.trim() &&
     subcategoriaId &&
@@ -3599,49 +3517,9 @@ function FormOcorrenciaDireta({
 
       {open && (
         <div className="mt-3 space-y-3 bg-purple-50/40 border border-purple-200 rounded-lg p-4">
-          {/* Token Panel */}
-          <div className={`rounded-md border p-3 text-xs ${tokenStatus?.valid ? "bg-green-50 border-green-200 text-green-800" : tokenStatus?.has_token ? "bg-yellow-50 border-yellow-200 text-yellow-800" : "bg-red-50 border-red-200 text-red-800"}`}>
-            <div className="flex items-center justify-between gap-2 flex-wrap">
-              <div>
-                {tokenStatus === null ? "Verificando token…" :
-                  tokenStatus.valid ? <>✅ {tokenStatus.full_name || tokenStatus.email} — expira em <strong>{Math.max(0, Math.round((tokenStatus.expires_in_seconds || 0) / 60))}min</strong></> :
-                  tokenStatus.has_token ? "⚠️ Token expirado — clique Atualizar" :
-                  "❌ Sem token cadastrado — clique Cadastrar token"}
-              </div>
-              <div className="flex gap-2">
-                {tokenStatus?.has_token && (
-                  <button onClick={refreshToken} disabled={refreshingToken} className="bg-white border border-current px-2.5 py-1 rounded text-[11px] font-medium hover:bg-current hover:text-white disabled:opacity-50">
-                    {refreshingToken ? "..." : "Atualizar"}
-                  </button>
-                )}
-                <button onClick={() => setShowBootstrap((v) => !v)} className="bg-white border border-current px-2.5 py-1 rounded text-[11px] font-medium hover:bg-current hover:text-white">
-                  {showBootstrap ? "Cancelar" : tokenStatus?.has_token ? "Resetar" : "Cadastrar token"}
-                </button>
-                {tokenStatus?.has_token && (
-                  <button onClick={limparToken} className="bg-white border border-current px-2.5 py-1 rounded text-[11px] font-medium hover:bg-red-600 hover:text-white hover:border-red-600">
-                    Apagar
-                  </button>
-                )}
-              </div>
-            </div>
-            {tokenMsg && <div className="mt-2 text-[11px]">{tokenMsg}</div>}
-            {showBootstrap && (
-              <div className="mt-3 space-y-2">
-                <p className="text-[11px] leading-relaxed">
-                  1. Em <a href="https://preview--centraldeocorrenciasemultas.lovable.app/adm/funil-ocorrencias" target="_blank" rel="noopener" className="underline">centraldeocorrenciasemultas.lovable.app</a> → F12 → Console:
-                </p>
-                <pre className="bg-gray-900 text-green-300 text-[10px] p-2 rounded overflow-x-auto select-all">{`(()=>{const e=Object.entries(localStorage).find(([k])=>k.includes('supabase')||k.startsWith('sb-'));if(!e)return'sem auth';const v=e[1].startsWith('base64-')?atob(e[1].slice(7)):e[1];const j=JSON.parse(v);console.log('access_token:',j.access_token);console.log('refresh_token:',j.refresh_token);copy(j.refresh_token);return'refresh_token copiado'})()`}</pre>
-                <textarea value={tokenAccessInput} onChange={(e) => setTokenAccessInput(e.target.value)} placeholder="access_token (eyJhbGc...) ou JSON inteiro" rows={3} className="w-full border border-current rounded px-2 py-1 text-[10px] font-mono bg-white text-gray-900" />
-                <input type="text" value={tokenRefreshInput} onChange={(e) => setTokenRefreshInput(e.target.value)} placeholder="refresh_token (deixe vazio se colou JSON)" className="w-full border border-current rounded px-2 py-1 text-[10px] font-mono bg-white text-gray-900" />
-                <button onClick={salvarToken} disabled={!tokenAccessInput.trim()} className="bg-current text-white px-3 py-1.5 rounded text-[11px] font-medium disabled:opacity-50">Salvar Token</button>
-              </div>
-            )}
-          </div>
-
-          {/* Form fields */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs text-gray-700 block mb-1">Envolve imóvel?</label>
+              <label className="text-xs text-gray-700 block mb-1">A reclamação envolve algum imóvel da Seazone? *</label>
               <div className="flex gap-2">
                 <button onClick={() => setEnvolveImovel(true)} className={`flex-1 px-3 py-2 rounded-md text-sm font-medium ${envolveImovel ? "bg-purple-600 text-white" : "bg-white border border-gray-300 text-gray-700"}`}>SIM</button>
                 <button onClick={() => setEnvolveImovel(false)} className={`flex-1 px-3 py-2 rounded-md text-sm font-medium ${!envolveImovel ? "bg-purple-600 text-white" : "bg-white border border-gray-300 text-gray-700"}`}>NÃO</button>
@@ -3655,7 +3533,7 @@ function FormOcorrenciaDireta({
 
           <div>
             <label className="text-xs text-gray-700 block mb-1">Franquia *</label>
-            <input type="text" list="franquias-list" value={franquiaNome} onChange={(e) => setFranquiaNome(e.target.value)} placeholder="Selecione ou digite a franquia" className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500" />
+            <input type="text" list="franquias-list" value={franquiaNome} onChange={(e) => setFranquiaNome(e.target.value)} placeholder="Selecione a franquia" className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500" />
             <datalist id="franquias-list">
               {franquias.map((f) => <option key={f.id} value={f.nome} />)}
             </datalist>
@@ -3670,7 +3548,12 @@ function FormOcorrenciaDireta({
           </div>
 
           <div>
-            <label className="text-xs text-gray-700 block mb-1">Subcategoria *</label>
+            <label className="text-xs text-gray-700 block mb-1">Descreva o ocorrido *</label>
+            <textarea value={descricao} onChange={(e) => setDescricao(e.target.value)} rows={3} placeholder="Descreva detalhadamente a ocorrência..." className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500" />
+          </div>
+
+          <div>
+            <label className="text-xs text-gray-700 block mb-1">Subcategoria da ocorrência *</label>
             <select value={subcategoriaId} onChange={(e) => setSubcategoriaId(e.target.value)} className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm bg-white">
               <option value="">Selecione a subcategoria</option>
               {Object.entries(subcategoriasAgrupadas).map(([cat, subs]) => (
@@ -3687,16 +3570,6 @@ function FormOcorrenciaDireta({
           </div>
 
           <div>
-            <label className="text-xs text-gray-700 block mb-1">Descrição *</label>
-            <textarea value={descricao} onChange={(e) => setDescricao(e.target.value)} rows={3} className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500" />
-          </div>
-
-          <div>
-            <label className="text-xs text-gray-700 block mb-1">Link do chamado (Sults, opcional)</label>
-            <input type="url" value={linkChamado} onChange={(e) => setLinkChamado(e.target.value)} placeholder="https://seazone.sults.com.br/chamados/interacoes/..." className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500" />
-          </div>
-
-          <div>
             <label className="text-xs text-gray-700 block mb-1">Evidência (opcional, max 10MB)</label>
             <input type="file" onChange={(e) => setEvidencia(e.target.files?.[0] || null)} accept="image/*,application/pdf,.doc,.docx" className="w-full text-sm" />
             {evidencia && <p className="text-[10px] text-gray-500 mt-1">{evidencia.name} ({Math.round(evidencia.size / 1024)}KB)</p>}
@@ -3710,7 +3583,7 @@ function FormOcorrenciaDireta({
           )}
 
           <button onClick={handleEnviar} disabled={!podeEnviar || sending} className="w-full bg-purple-600 text-white py-2.5 rounded-md font-medium hover:bg-purple-700 disabled:opacity-50">
-            {sending ? "Registrando..." : "Registrar Direto"}
+            {sending ? "Registrando..." : "Registrar Ocorrência"}
           </button>
         </div>
       )}
@@ -3762,9 +3635,16 @@ function FormOcorrencia() {
 
   return (
     <section className="bg-white rounded-lg shadow p-6">
-      <div className="mb-4">
+      {/* 1. Registrar ocorrência no card */}
+      <RegistrarOcorrenciaCard />
+
+      {/* 2. Registrar direto (sem Tampermonkey) */}
+      <FormOcorrenciaDireta initialCodigo={codigoOcorrencia} initialFranquia={franquiaOcorrencia} initialDescricao={descricaoOcorrencia} />
+
+      {/* 3. Legacy: Texto de cobrança + Abrir ocorrência (Tampermonkey) */}
+      <div className="border-t border-gray-200 pt-4 mt-4">
         <h4 className="text-sm font-semibold text-gray-700 mb-2">Texto de cobrança</h4>
-        <div className="flex gap-2 items-end">
+        <div className="flex gap-2 items-end mb-4">
           <div>
             <label className="text-xs text-gray-500 block mb-1">Quantidade de dias</label>
             <input type="number" value={dias} onChange={(e) => setDias(e.target.value)} placeholder="Ex: 5" className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 w-24" />
@@ -3777,59 +3657,55 @@ function FormOcorrencia() {
             {copied === "dias" ? "Copiado!" : "Copiar texto"}
           </button>
         </div>
-      </div>
 
-      <div className="border-t border-gray-200 pt-4 mb-4 space-y-3">
-        <div className="flex gap-2 items-end">
+        <div className="space-y-3">
+          <div className="flex gap-2 items-end">
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">Código do imóvel</label>
+              <input
+                type="text"
+                value={codigoOcorrencia}
+                onChange={(e) => setCodigoOcorrencia(e.target.value.toUpperCase())}
+                onBlur={buscarFranquia}
+                onKeyDown={(e) => e.key === "Enter" && buscarFranquia()}
+                placeholder="Ex: ALA0004"
+                className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 w-40"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">Franquia {loadingFranquia && "(buscando...)"}</label>
+              <input
+                type="text"
+                value={franquiaOcorrencia}
+                onChange={(e) => setFranquiaOcorrencia(e.target.value)}
+                placeholder="Preenchido automaticamente"
+                className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 w-64 bg-gray-50"
+              />
+            </div>
+          </div>
           <div>
-            <label className="text-xs text-gray-500 block mb-1">Código do imóvel</label>
-            <input
-              type="text"
-              value={codigoOcorrencia}
-              onChange={(e) => setCodigoOcorrencia(e.target.value.toUpperCase())}
-              onBlur={buscarFranquia}
-              onKeyDown={(e) => e.key === "Enter" && buscarFranquia()}
-              placeholder="Ex: ALA0004"
-              className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 w-40"
+            <label className="text-xs text-gray-500 block mb-1">Descreva o ocorrido</label>
+            <textarea
+              value={descricaoOcorrencia}
+              onChange={(e) => setDescricaoOcorrencia(e.target.value)}
+              placeholder="Descreva detalhadamente a ocorrência..."
+              rows={3}
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
             />
           </div>
           <div>
-            <label className="text-xs text-gray-500 block mb-1">Franquia {loadingFranquia && "(buscando...)"}</label>
-            <input
-              type="text"
-              value={franquiaOcorrencia}
-              onChange={(e) => setFranquiaOcorrencia(e.target.value)}
-              placeholder="Preenchido automaticamente"
-              className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 w-64 bg-gray-50"
-            />
+            <a
+              href={buildOcorrenciaUrl()}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-block bg-purple-600 text-white px-5 py-2.5 rounded-md text-sm font-medium hover:bg-purple-700 transition-colors"
+            >
+              Abrir ocorrência
+            </a>
+            <p className="text-xs text-gray-400 mt-1">Tampermonkey preenche: email, SIM, código, franquia, origem, subcategoria e descrição. Evidência: anexar manualmente.</p>
           </div>
         </div>
-        <div>
-          <label className="text-xs text-gray-500 block mb-1">Descreva o ocorrido</label>
-          <textarea
-            value={descricaoOcorrencia}
-            onChange={(e) => setDescricaoOcorrencia(e.target.value)}
-            placeholder="Descreva detalhadamente a ocorrência..."
-            rows={3}
-            className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
-          />
-        </div>
-        <div>
-          <a
-            href={buildOcorrenciaUrl()}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-block bg-purple-600 text-white px-5 py-2.5 rounded-md text-sm font-medium hover:bg-purple-700 transition-colors"
-          >
-            Abrir ocorrência
-          </a>
-          <p className="text-xs text-gray-400 mt-1">Tampermonkey preenche: email, SIM, código, franquia, origem, subcategoria e descrição. Evidência: anexar manualmente.</p>
-        </div>
       </div>
-
-      <FormOcorrenciaDireta initialCodigo={codigoOcorrencia} initialFranquia={franquiaOcorrencia} initialDescricao={descricaoOcorrencia} />
-
-      <RegistrarOcorrenciaCard />
 
       <div className="border-t border-gray-200 pt-4 mt-4">
         <h4 className="text-sm font-semibold text-gray-700 mb-2">Textos copiar Sults</h4>

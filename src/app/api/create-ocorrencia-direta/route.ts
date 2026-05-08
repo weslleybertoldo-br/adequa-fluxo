@@ -1,10 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/pipefy";
-import {
-  LOVABLE_SUPA_ANON,
-  LOVABLE_SUPA_URL,
-  getValidLovableAccessTokenAndUpdate,
-} from "@/lib/lovable-auth";
+import { LOVABLE_SUPA_ANON, LOVABLE_SUPA_URL } from "@/lib/lovable-auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,19 +21,15 @@ const AREA_ORIGEM_VALIDAS = [
 ];
 
 function escapeStorageName(name: string): string {
-  // Substitui chars problematicos pra storage path
   return name.replace(/[^A-Za-z0-9._-]/g, "_");
 }
 
 function gravidadeFmt(gravidade: string, pontos: number): string {
-  // Formato igual ao site: "leve - 1 ponto" / "média - 2 pontos" / "grave - 4 pontos"
-  // (acentos preservados quando possivel)
   const plural = pontos === 1 ? "ponto" : "pontos";
   return `${gravidade} - ${pontos} ${plural}`;
 }
 
 function mesAplicacao(): string {
-  // YYYY-MM em fuso BR
   const fmt = new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/Maceio",
     year: "numeric",
@@ -54,19 +46,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
   }
 
-  const cookieHolder = NextResponse.json({});
-  let token: string;
-  try {
-    token = await getValidLovableAccessTokenAndUpdate(req, cookieHolder);
-  } catch (e) {
-    return NextResponse.json(
-      {
-        error: e instanceof Error ? e.message : String(e),
-        needs_token_bootstrap: true,
-      },
-      { status: 401 }
-    );
-  }
+  // Anon-first: tentamos INSERT com anon key. Se RLS bloquear, instrucao
+  // futura sera bootstrap de JWT (mesmo padrao do suporte-ops).
+  const authBearer = `Bearer ${LOVABLE_SUPA_ANON}`;
 
   try {
     const formData = await req.formData();
@@ -81,14 +63,11 @@ export async function POST(req: NextRequest) {
     const areaOrigem = (formData.get("area_origem") as string)?.trim();
     const descricao = (formData.get("descricao") as string)?.trim();
     const subcategoriaCodigo = (formData.get("subcategoria_codigo") as string)?.trim();
-    const subcategoriaDescricao = (formData.get("subcategoria_descricao") as string)?.trim() || "";
     const subcategoriaCategoria = (formData.get("subcategoria_categoria") as string)?.trim() || "";
     const subcategoriaGravidade = (formData.get("subcategoria_gravidade") as string)?.trim() || "";
     const subcategoriaPontos = Number(formData.get("subcategoria_pontos") || 0);
-    const linkChamado = (formData.get("link_chamado") as string)?.trim() || "";
     const file = formData.get("evidencia") as File | null;
 
-    // Validacoes
     if (!email) return NextResponse.json({ error: "email obrigatorio" }, { status: 400 });
     if (!franquiaNome) return NextResponse.json({ error: "franquia obrigatoria" }, { status: 400 });
     if (!areaOrigem || !AREA_ORIGEM_VALIDAS.includes(areaOrigem)) {
@@ -100,7 +79,10 @@ export async function POST(req: NextRequest) {
     if (!descricao) return NextResponse.json({ error: "descricao obrigatoria" }, { status: 400 });
     if (!subcategoriaCodigo) return NextResponse.json({ error: "subcategoria obrigatoria" }, { status: 400 });
     if (envolve_imovel && !codigoImovel) {
-      return NextResponse.json({ error: "codigo_imovel obrigatorio quando envolve_imovel=true" }, { status: 400 });
+      return NextResponse.json(
+        { error: "codigo_imovel obrigatorio quando envolve_imovel=true" },
+        { status: 400 }
+      );
     }
     if (file && file.size > 10 * 1024 * 1024) {
       return NextResponse.json({ error: "Arquivo > 10MB" }, { status: 400 });
@@ -120,7 +102,7 @@ export async function POST(req: NextRequest) {
           method: "POST",
           headers: {
             apikey: LOVABLE_SUPA_ANON,
-            Authorization: `Bearer ${token}`,
+            Authorization: authBearer,
             "Content-Type": file.type || "application/octet-stream",
             "x-upsert": "false",
           },
@@ -138,11 +120,12 @@ export async function POST(req: NextRequest) {
       nomeAnexo = file.name;
     }
 
-    // 2. INSERT na tabela ocorrencias
+    // 2. INSERT
     const titulo = descricao.split("\n")[0].slice(0, 200);
-    const gravidade = subcategoriaGravidade && subcategoriaPontos
-      ? gravidadeFmt(subcategoriaGravidade, subcategoriaPontos)
-      : "";
+    const gravidade =
+      subcategoriaGravidade && subcategoriaPontos
+        ? gravidadeFmt(subcategoriaGravidade, subcategoriaPontos)
+        : "";
 
     const body = {
       titulo,
@@ -157,8 +140,6 @@ export async function POST(req: NextRequest) {
       codigo_imovel: codigoImovel || (envolve_imovel ? "" : "N/A"),
       url_anexo: urlAnexo,
       nome_anexo: nomeAnexo,
-      link_chamado: linkChamado || null,
-      link_ocorrencia: linkChamado || null,
       gravidade,
       subcategoria: subcategoriaCodigo,
       categoria: subcategoriaCategoria,
@@ -170,7 +151,7 @@ export async function POST(req: NextRequest) {
       method: "POST",
       headers: {
         apikey: LOVABLE_SUPA_ANON,
-        Authorization: `Bearer ${token}`,
+        Authorization: authBearer,
         "Content-Type": "application/json",
         Prefer: "return=representation",
       },
@@ -181,7 +162,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         {
           error: `lovable INSERT ocorrencia ${insRes.status}: ${txt.slice(0, 400)}`,
-          uploaded_url: urlAnexo, // pra rollback manual se quiser
+          uploaded_url: urlAnexo,
         },
         { status: 500 }
       );
@@ -194,15 +175,12 @@ export async function POST(req: NextRequest) {
       );
     }
     const ocorrencia = arr[0];
-    const finalRes = NextResponse.json({
+    return NextResponse.json({
       success: true,
       id: ocorrencia.id,
       url: `https://preview--centraldeocorrenciasemultas.lovable.app/adm/funil-ocorrencias?id=${ocorrencia.id}`,
       uploaded_url: urlAnexo,
     });
-    const refreshedCookie = cookieHolder.headers.get("set-cookie");
-    if (refreshedCookie) finalRes.headers.set("set-cookie", refreshedCookie);
-    return finalRes;
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? e.message : String(e) },
