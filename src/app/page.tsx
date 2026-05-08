@@ -3911,6 +3911,14 @@ const URGENCIAS_SUPORTE = [
   { value: "baixa", label: "Baixa (24h)" },
 ] as const;
 
+function saudacaoBR(): string {
+  const h = parseInt(
+    new Date().toLocaleString("en-US", { timeZone: "America/Sao_Paulo", hour: "numeric", hour12: false }),
+    10
+  );
+  return h < 12 ? "bom dia" : h < 18 ? "boa tarde" : "boa noite";
+}
+
 function FormSuporte() {
   const [codigo, setCodigo] = useState("");
   const [franqueado, setFranqueado] = useState("");
@@ -3919,12 +3927,12 @@ function FormSuporte() {
   const [setor, setSetor] = useState(SETORES_SUPORTE[0]);
   const [assunto, setAssunto] = useState<typeof ASSUNTOS_SUPORTE[number]>("Comunicação");
   const [urgencia, setUrgencia] = useState<string>("media");
-  const [descComplemento, setDescComplemento] = useState("");
+  const [descricao, setDescricao] = useState(
+    `Pessoal, ${saudacaoBR()}. Tudo bem?\nConseguem nos ajudar com o retorno da franquia?`
+  );
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState<{ success: boolean; message: string; url?: string } | null>(null);
   const [copiedSuporte, setCopiedSuporte] = useState(false);
-
-  const descBase = "Pessoal, boa tarde. Tudo bem?\nConseguem nos ajudar com o retorno da franquia?";
 
   const buscarFranqueado = async () => {
     if (!codigo.trim()) return;
@@ -3944,10 +3952,6 @@ function FormSuporte() {
     }
   }, [codigo]);
 
-  const descricaoCompleta = descComplemento.trim()
-    ? `${descBase}\n${descComplemento.trim()}`
-    : descBase;
-
   const handleEnviar = async () => {
     setSending(true);
     setResult(null);
@@ -3960,7 +3964,7 @@ function FormSuporte() {
           codigo: codigo.trim(),
           categoria,
           setor,
-          descricao: descricaoCompleta,
+          descricao: descricao.trim(),
           franqueado,
           assunto,
           urgencia,
@@ -3970,7 +3974,7 @@ function FormSuporte() {
       if (data.success) {
         setResult({ success: true, message: `Suporte criado em suporte-ops`, url: data.url });
         setCodigo("");
-        setDescComplemento("");
+        setDescricao(`Pessoal, ${saudacaoBR()}. Tudo bem?\nConseguem nos ajudar com o retorno da franquia?`);
       } else {
         setResult({ success: false, message: data.error || "Erro ao criar" });
       }
@@ -4028,22 +4032,19 @@ function FormSuporte() {
 
         <div>
           <label className="text-sm font-medium text-gray-700 block mb-1">Descrição do Problema</label>
-          <div className="bg-gray-50 border border-gray-200 rounded-md p-3 mb-2">
-            <pre className="text-sm text-gray-700 whitespace-pre-wrap font-sans">{descBase}</pre>
-          </div>
-          <label className="text-xs text-gray-500 block mb-1">Complemento (link, detalhes, etc.)</label>
-          <textarea value={descComplemento} onChange={(e) => setDescComplemento(e.target.value)} placeholder="https://seazone.sults.com.br/chamados/interacoes/..." rows={3} className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          <textarea
+            value={descricao}
+            onChange={(e) => setDescricao(e.target.value)}
+            placeholder="Descreva o problema ou cole o link do chamado..."
+            rows={5}
+            className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
         </div>
 
         <div>
           <label className="text-sm font-medium text-gray-700 block mb-1">Franqueado</label>
           <input type="text" value={franqueado} onChange={(e) => setFranqueado(e.target.value)} placeholder={loadingFranqueado ? "Buscando..." : "Preenchido automaticamente pelo código"} className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
           <p className="text-[10px] text-gray-400 mt-1">Buscado automaticamente do Pipe 1. Edite se necessário.</p>
-        </div>
-
-        <div className="bg-blue-50 rounded-md p-4 border border-blue-200">
-          <p className="text-xs font-medium text-blue-700 mb-2">Descrição que será enviada:</p>
-          <pre className="text-xs text-blue-900 whitespace-pre-wrap font-sans">{descricaoCompleta}</pre>
         </div>
 
         {result && (
