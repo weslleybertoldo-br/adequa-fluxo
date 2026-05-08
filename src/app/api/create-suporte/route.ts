@@ -1,14 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/pipefy";
-import { getValidAccessToken } from "@/lib/suporte-ops-auth";
+import {
+  SUPORTE_OPS_SUPA_ANON,
+  SUPORTE_OPS_SUPA_URL,
+  getValidAccessTokenAndUpdate,
+} from "@/lib/suporte-ops-auth";
 import { SUPORTE_USER_WESLLEY } from "@/lib/suporte-ops";
-
-const SUPA_URL =
-  process.env.SUPORTE_OPS_SUPABASE_URL ||
-  "https://fxjpnamoafzomqlncdyn.supabase.co";
-const SUPA_ANON =
-  process.env.SUPORTE_OPS_SUPABASE_ANON_KEY ||
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ4anBuYW1vYWZ6b21xbG5jZHluIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUwNzM0MTAsImV4cCI6MjA5MDY0OTQxMH0.69uyyWzQGxeeSx9dhH8GWAhUZfFIgXvW-vbCCiqvEXA";
 
 // IDs do projeto suporte-ops descobertos via inspecao da tabela `processos`/`areas`.
 // Aba "Suporte Franquias" do pipefy-enxoval sempre cria card no processo
@@ -51,14 +48,15 @@ export async function POST(req: NextRequest) {
       ? (urgencia as string).toLowerCase()
       : "media";
 
+    // Cookie holder pra carregar refresh, se necessario
+    const cookieHolder = NextResponse.json({});
     let accessToken: string;
     try {
-      accessToken = await getValidAccessToken();
+      accessToken = await getValidAccessTokenAndUpdate(req, cookieHolder);
     } catch (e) {
       return NextResponse.json(
         {
-          error:
-            e instanceof Error ? e.message : String(e),
+          error: e instanceof Error ? e.message : String(e),
           needs_token_bootstrap: true,
         },
         { status: 401 }
@@ -94,10 +92,10 @@ export async function POST(req: NextRequest) {
       campos_preenchidos: camposPreenchidos,
     };
 
-    const res = await fetch(`${SUPA_URL}/rest/v1/cards?select=*`, {
+    const insRes = await fetch(`${SUPORTE_OPS_SUPA_URL}/rest/v1/cards?select=*`, {
       method: "POST",
       headers: {
-        apikey: SUPA_ANON,
+        apikey: SUPORTE_OPS_SUPA_ANON,
         Authorization: `Bearer ${accessToken}`,
         "Content-Type": "application/json",
         Prefer: "return=representation",
@@ -105,15 +103,15 @@ export async function POST(req: NextRequest) {
       body: JSON.stringify(body),
     });
 
-    if (!res.ok) {
-      const txt = await res.text().catch(() => "");
+    if (!insRes.ok) {
+      const txt = await insRes.text().catch(() => "");
       return NextResponse.json(
-        { error: `suporte-ops insert ${res.status}: ${txt.slice(0, 400)}` },
+        { error: `suporte-ops insert ${insRes.status}: ${txt.slice(0, 400)}` },
         { status: 500 }
       );
     }
 
-    const arr = await res.json();
+    const arr = await insRes.json();
     if (!Array.isArray(arr) || !arr[0]) {
       return NextResponse.json(
         { error: "INSERT retornou vazio (RLS bloqueou?)" },
@@ -122,11 +120,15 @@ export async function POST(req: NextRequest) {
     }
 
     const card = arr[0];
-    return NextResponse.json({
+    const finalRes = NextResponse.json({
       success: true,
       cardId: card.id,
       url: `https://suporte-ops.seazone.properties/kanban?card=${card.id}`,
     });
+    // Propaga eventual cookie atualizado pelo refresh
+    const refreshedCookie = cookieHolder.headers.get("set-cookie");
+    if (refreshedCookie) finalRes.headers.set("set-cookie", refreshedCookie);
+    return finalRes;
   } catch (err: unknown) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : String(err) },

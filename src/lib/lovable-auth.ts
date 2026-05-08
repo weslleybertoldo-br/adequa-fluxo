@@ -1,52 +1,43 @@
 // ========================
-// Token storage + auto-refresh do Supabase do suporte-ops.seazone.properties
+// Token storage + auto-refresh do Supabase do central de ocorrencias e multas
+// (Lovable preview app: preview--centraldeocorrenciasemultas.lovable.app)
 // ========================
-// O site usa Google OAuth via Supabase Auth, JWT expira em 1h.
-// Token state persistido em cookie httpOnly criptografado (AES-256-GCM com
-// TOKEN_SECRET). Funciona local + Vercel + cold start (cookie vive no browser).
-//
-// API por request:
-//   readToken(req) -> Token | null
-//   setTokenCookie(res, token), clearTokenCookie(res)
-//   getValidAccessTokenAndUpdate(req, res) -> string  (refresh sob demanda)
-//   refreshTokenAndUpdate(req, res) -> Token  (force)
-//   getTokenStatus(req) -> TokenStatus
-//   buildInitialToken(payload) -> Token  (valida + decoda JWT)
+// Cookie httpOnly criptografado (AES-256-GCM com TOKEN_SECRET).
+// Mesmo padrao do suporte-ops-auth.ts.
 
 import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 
 const SUPA_URL =
-  process.env.SUPORTE_OPS_SUPABASE_URL ||
-  "https://fxjpnamoafzomqlncdyn.supabase.co";
+  process.env.LOVABLE_SUPABASE_URL ||
+  "https://olnzcwlzfheprbuhbylc.supabase.co";
 const SUPA_ANON =
-  process.env.SUPORTE_OPS_SUPABASE_ANON_KEY ||
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ4anBuYW1vYWZ6b21xbG5jZHluIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUwNzM0MTAsImV4cCI6MjA5MDY0OTQxMH0.69uyyWzQGxeeSx9dhH8GWAhUZfFIgXvW-vbCCiqvEXA";
+  process.env.LOVABLE_SUPABASE_ANON_KEY ||
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9sbnpjd2x6ZmhlcHJidWhieWxjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQyNzE1NTIsImV4cCI6MjA4OTg0NzU1Mn0.GO349wqdjIdyLtoXgqfU-o0_vOJ_PtFuNk6GHTMn1_A";
 
-const COOKIE_NAME = "supops_token";
-// 60 dias — refresh_token Supabase aguenta ~30d inativo, mas damos margem
-const COOKIE_MAX_AGE = 60 * 60 * 24 * 60;
+const COOKIE_NAME = "lovable_token";
+const COOKIE_MAX_AGE = 60 * 60 * 24 * 60; // 60 dias
 
-export interface SuporteOpsToken {
+export interface LovableToken {
   access_token: string;
   refresh_token: string;
   expires_at: number;
   user_id: string;
   email: string;
+  full_name: string;
   saved_at: number;
 }
 
-export interface SuporteOpsTokenStatus {
+export interface LovableTokenStatus {
   has_token: boolean;
   valid: boolean;
   expires_at?: number;
   expires_in_seconds?: number;
   email?: string;
   user_id?: string;
+  full_name?: string;
   saved_at?: number;
 }
-
-// ---------- crypto ----------
 
 function getKey(): Buffer {
   const secret = process.env.TOKEN_SECRET;
@@ -78,9 +69,7 @@ function decrypt(encoded: string): string | null {
   }
 }
 
-// ---------- cookie I/O ----------
-
-export function readToken(req: NextRequest): SuporteOpsToken | null {
+export function readLovableToken(req: NextRequest): LovableToken | null {
   const c = req.cookies.get(COOKIE_NAME);
   if (!c) return null;
   const d = decrypt(c.value);
@@ -92,7 +81,7 @@ export function readToken(req: NextRequest): SuporteOpsToken | null {
   }
 }
 
-export function setTokenCookie(res: NextResponse, token: SuporteOpsToken): void {
+export function setLovableTokenCookie(res: NextResponse, token: LovableToken): void {
   res.cookies.set({
     name: COOKIE_NAME,
     value: encrypt(JSON.stringify(token)),
@@ -104,7 +93,7 @@ export function setTokenCookie(res: NextResponse, token: SuporteOpsToken): void 
   });
 }
 
-export function clearTokenCookie(res: NextResponse): void {
+export function clearLovableTokenCookie(res: NextResponse): void {
   res.cookies.set({
     name: COOKIE_NAME,
     value: "",
@@ -116,8 +105,6 @@ export function clearTokenCookie(res: NextResponse): void {
   });
 }
 
-// ---------- decode + bootstrap ----------
-
 function decodeJwtPayload(jwt: string): any {
   const parts = jwt.split(".");
   if (parts.length !== 3) throw new Error("JWT mal formado");
@@ -127,12 +114,13 @@ function decodeJwtPayload(jwt: string): any {
   return JSON.parse(txt);
 }
 
-export async function buildInitialToken(payload: any): Promise<SuporteOpsToken> {
+export async function buildInitialLovableToken(payload: any): Promise<LovableToken> {
   let access_token: string | undefined;
   let refresh_token: string | undefined;
   let expires_at: number | undefined;
   let user_id: string | undefined;
   let email: string | undefined;
+  let full_name: string | undefined;
 
   if (typeof payload === "string") {
     const lines = payload.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
@@ -147,21 +135,21 @@ export async function buildInitialToken(payload: any): Promise<SuporteOpsToken> 
     const user = payload.user || {};
     user_id = user.id || payload.user_id;
     email = user.email || payload.email;
+    full_name = user?.user_metadata?.full_name || user?.user_metadata?.name || payload.full_name;
   }
 
-  if (!access_token || typeof access_token !== "string") {
-    throw new Error("access_token ausente — paste o JWT que comeca com eyJ...");
-  }
-  if (!refresh_token || typeof refresh_token !== "string") {
-    throw new Error("refresh_token ausente");
-  }
+  if (!access_token) throw new Error("access_token ausente — paste o JWT");
+  if (!refresh_token) throw new Error("refresh_token ausente");
 
-  if (!expires_at || !user_id || !email) {
+  if (!expires_at || !user_id || !email || !full_name) {
     try {
       const claims = decodeJwtPayload(access_token);
       if (!expires_at && Number.isFinite(claims.exp)) expires_at = claims.exp;
       if (!user_id && typeof claims.sub === "string") user_id = claims.sub;
       if (!email && typeof claims.email === "string") email = claims.email;
+      if (!full_name) {
+        full_name = claims?.user_metadata?.full_name || claims?.user_metadata?.name || "";
+      }
     } catch (e) {
       throw new Error(
         `access_token nao parece JWT valido: ${e instanceof Error ? e.message : String(e)}`
@@ -180,13 +168,12 @@ export async function buildInitialToken(payload: any): Promise<SuporteOpsToken> 
     expires_at: expires_at as number,
     user_id,
     email: email || "",
+    full_name: full_name || "",
     saved_at: Math.floor(Date.now() / 1000),
   };
 }
 
-// ---------- refresh ----------
-
-async function callSupabaseRefresh(refresh_token: string): Promise<SuporteOpsToken> {
+async function callSupabaseRefresh(refresh_token: string): Promise<LovableToken> {
   const res = await fetch(`${SUPA_URL}/auth/v1/token?grant_type=refresh_token`, {
     method: "POST",
     headers: { apikey: SUPA_ANON, "Content-Type": "application/json" },
@@ -195,7 +182,7 @@ async function callSupabaseRefresh(refresh_token: string): Promise<SuporteOpsTok
   if (!res.ok) {
     const txt = await res.text().catch(() => "");
     throw new Error(
-      `Refresh falhou ${res.status}: ${txt.slice(0, 300)} — refresh_token expirado, re-bootstrap`
+      `Refresh lovable falhou ${res.status}: ${txt.slice(0, 300)} — re-bootstrap`
     );
   }
   const data = await res.json();
@@ -208,38 +195,39 @@ async function callSupabaseRefresh(refresh_token: string): Promise<SuporteOpsTok
     expires_at: Number(data.expires_at),
     user_id: data.user?.id || "",
     email: data.user?.email || "",
+    full_name: data.user?.user_metadata?.full_name || data.user?.user_metadata?.name || "",
     saved_at: Math.floor(Date.now() / 1000),
   };
 }
 
-export async function refreshTokenAndUpdate(
+export async function refreshLovableTokenAndUpdate(
   req: NextRequest,
   res: NextResponse
-): Promise<SuporteOpsToken> {
-  const current = readToken(req);
-  if (!current) throw new Error("Sem token — bootstrap antes via POST /api/suporte-ops/token");
+): Promise<LovableToken> {
+  const current = readLovableToken(req);
+  if (!current) throw new Error("Sem token lovable — bootstrap antes via /api/lovable/token");
   const next = await callSupabaseRefresh(current.refresh_token);
-  // Preserva user_id/email se Supabase nao retornar
   if (!next.user_id) next.user_id = current.user_id;
   if (!next.email) next.email = current.email;
-  setTokenCookie(res, next);
+  if (!next.full_name) next.full_name = current.full_name;
+  setLovableTokenCookie(res, next);
   return next;
 }
 
-export async function getValidAccessTokenAndUpdate(
+export async function getValidLovableAccessTokenAndUpdate(
   req: NextRequest,
   res: NextResponse
 ): Promise<string> {
-  const current = readToken(req);
-  if (!current) throw new Error("Sem token suporte-ops — bootstrap via /api/suporte-ops/token");
+  const current = readLovableToken(req);
+  if (!current) throw new Error("Sem token lovable — bootstrap via /api/lovable/token");
   const nowSec = Math.floor(Date.now() / 1000);
   if (current.expires_at - nowSec > 60) return current.access_token;
-  const refreshed = await refreshTokenAndUpdate(req, res);
+  const refreshed = await refreshLovableTokenAndUpdate(req, res);
   return refreshed.access_token;
 }
 
-export function getTokenStatus(req: NextRequest): SuporteOpsTokenStatus {
-  const current = readToken(req);
+export function getLovableTokenStatus(req: NextRequest): LovableTokenStatus {
+  const current = readLovableToken(req);
   if (!current) return { has_token: false, valid: false };
   const nowSec = Math.floor(Date.now() / 1000);
   return {
@@ -249,9 +237,10 @@ export function getTokenStatus(req: NextRequest): SuporteOpsTokenStatus {
     expires_in_seconds: current.expires_at - nowSec,
     email: current.email,
     user_id: current.user_id,
+    full_name: current.full_name,
     saved_at: current.saved_at,
   };
 }
 
-export const SUPORTE_OPS_SUPA_URL = SUPA_URL;
-export const SUPORTE_OPS_SUPA_ANON = SUPA_ANON;
+export const LOVABLE_SUPA_URL = SUPA_URL;
+export const LOVABLE_SUPA_ANON = SUPA_ANON;
