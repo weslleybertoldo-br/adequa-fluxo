@@ -3884,6 +3884,7 @@ function RelatorioModal({ tipo, onClose }: { tipo: "ocorrencia" | "suporte"; onC
   const [items, setItems] = useState<any[]>([]);
   const [filtroArea, setFiltroArea] = useState<string>("");
   const [view, setView] = useState<"lista" | "semana" | "mes">("mes");
+  const [listaCarregaTudo, setListaCarregaTudo] = useState(false);
 
   useEffect(() => {
     let cancel = false;
@@ -3993,38 +3994,73 @@ function RelatorioModal({ tipo, onClose }: { tipo: "ocorrencia" | "suporte"; onC
                   </tbody>
                 </table>
               )}
-              {view === "lista" && tipo === "ocorrencia" && (
-                <table className="w-full text-xs">
-                  <thead><tr className="border-b text-left"><th className="py-2">Data</th><th>Código</th><th>Franquia</th><th>Subcat</th><th>Status</th></tr></thead>
-                  <tbody>
-                    {(filtrados as OcorrenciaItem[]).map((o) => (
-                      <tr key={o.id} className="border-b border-gray-100">
-                        <td className="py-1">{fmtDateBR(o.criado_em)}</td>
-                        <td className="font-mono">{o.codigo_imovel}</td>
-                        <td className="truncate max-w-[180px]">{o.franquia_nome}</td>
-                        <td>{o.subcategoria || "—"}</td>
-                        <td className="text-[10px]">{o.status_etapa}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-              {view === "lista" && tipo === "suporte" && (
-                <table className="w-full text-xs">
-                  <thead><tr className="border-b text-left"><th className="py-2">Data</th><th>Código</th><th>Área</th><th>Processo</th><th>Status</th></tr></thead>
-                  <tbody>
-                    {(filtrados as SuporteItem[]).map((s) => (
-                      <tr key={s.id} className="border-b border-gray-100">
-                        <td className="py-1">{fmtDateBR(s.created_at)}</td>
-                        <td className="font-mono">{s.codigo_imovel}</td>
-                        <td>{s.area?.nome || "—"}</td>
-                        <td className="truncate max-w-[160px]">{s.processo?.nome || "—"}</td>
-                        <td className="text-[10px]">{s.status}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
+              {view === "lista" && (() => {
+                const ymAtual = (() => {
+                  const fmt = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Maceio", year: "numeric", month: "2-digit" });
+                  const parts = fmt.formatToParts(new Date());
+                  return `${parts.find(p=>p.type==="year")!.value}-${parts.find(p=>p.type==="month")!.value}`;
+                })();
+                const sameMonth = (iso: string) => {
+                  const d = new Date(iso);
+                  const fmt = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Maceio", year: "numeric", month: "2-digit" });
+                  const parts = fmt.formatToParts(d);
+                  return `${parts.find(p=>p.type==="year")!.value}-${parts.find(p=>p.type==="month")!.value}` === ymAtual;
+                };
+                const dataKey = tipo === "ocorrencia" ? "criado_em" : "created_at";
+                const visiveis = listaCarregaTudo
+                  ? filtrados
+                  : filtrados.filter((x: any) => sameMonth(x[dataKey]));
+                const ocultos = filtrados.length - visiveis.length;
+                return (
+                  <>
+                    {tipo === "ocorrencia" ? (
+                      <table className="w-full text-xs">
+                        <thead><tr className="border-b text-left"><th className="py-2">Data</th><th>Código</th><th>Franquia</th><th>Subcat</th><th>Status</th></tr></thead>
+                        <tbody>
+                          {(visiveis as OcorrenciaItem[]).map((o) => (
+                            <tr key={o.id} className="border-b border-gray-100">
+                              <td className="py-1">{fmtDateBR(o.criado_em)}</td>
+                              <td className="font-mono">{o.codigo_imovel}</td>
+                              <td className="truncate max-w-[180px]">{o.franquia_nome}</td>
+                              <td>{o.subcategoria || "—"}</td>
+                              <td className="text-[10px]">{o.status_etapa}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    ) : (
+                      <table className="w-full text-xs">
+                        <thead><tr className="border-b text-left"><th className="py-2">Data</th><th>Código</th><th>Área</th><th>Processo</th><th>Status</th></tr></thead>
+                        <tbody>
+                          {(visiveis as SuporteItem[]).map((s) => (
+                            <tr key={s.id} className="border-b border-gray-100">
+                              <td className="py-1">{fmtDateBR(s.created_at)}</td>
+                              <td className="font-mono">{s.codigo_imovel}</td>
+                              <td>{s.area?.nome || "—"}</td>
+                              <td className="truncate max-w-[160px]">{s.processo?.nome || "—"}</td>
+                              <td className="text-[10px]">{s.status}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                    {!listaCarregaTudo && ocultos > 0 && (
+                      <div className="mt-3 text-center">
+                        <button onClick={() => setListaCarregaTudo(true)} className="bg-gray-100 text-gray-700 px-4 py-2 rounded-md text-xs font-medium hover:bg-gray-200 transition-colors">
+                          Carregar todas as {tipo === "ocorrencia" ? "ocorrências" : "suportes"} ({ocultos} ocultas)
+                        </button>
+                      </div>
+                    )}
+                    {listaCarregaTudo && (
+                      <div className="mt-3 text-center">
+                        <button onClick={() => setListaCarregaTudo(false)} className="text-[10px] text-gray-500 underline hover:text-gray-700">
+                          Mostrar só mês atual
+                        </button>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
             </>
           )}
         </div>

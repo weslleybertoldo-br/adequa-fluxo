@@ -15,8 +15,9 @@ const SUPA_ANON =
 export async function GET(req: NextRequest) {
   if (!requireAuth(req.cookies.get("auth_token")?.value))
     return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
+  // FK explicita pra desambiguar (cards tem area_id e dependencia_area_id apontando pra areas)
   const select =
-    "id,codigo_imovel,status,urgencia,created_at,area:areas(nome),processo:processos(nome)";
+    "id,codigo_imovel,status,urgencia,created_at,area:areas!cards_area_id_fkey(nome),processo:processos!cards_processo_id_fkey(nome)";
   const r = await fetch(
     `${SUPA_URL}/rest/v1/cards?solicitante_id=eq.${SUPORTE_USER_WESLLEY}&select=${encodeURIComponent(select)}&order=created_at.desc&limit=2000`,
     {
