@@ -3401,6 +3401,65 @@ interface Franquia {
   email: string;
 }
 
+const STOPWORDS_NOME = new Set(["de", "da", "do", "das", "dos", "e"]);
+
+function normalizar(s: string): string {
+  return s
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9 ]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function tokensNome(s: string): string[] {
+  return normalizar(s)
+    .split(" ")
+    .filter((t) => t && !STOPWORDS_NOME.has(t));
+}
+
+/**
+ * Encontra a franquia do lovable que melhor casa com `rawName` vindo do Pipe 1.
+ * Estrategia em ordem:
+ *   1. Match exato case/accent insensitive
+ *   2. Maior overlap de tokens com >=2 tokens em comum (ou >=1 se rawName tem 1 token)
+ *      e desempate pela maior cobertura proporcional do rawName.
+ *   3. Se nada bater, retorna null.
+ */
+function matchFranquia(rawName: string, list: Franquia[]): Franquia | null {
+  if (!rawName || list.length === 0) return null;
+  const normRaw = normalizar(rawName);
+  const tokRaw = tokensNome(rawName);
+  if (tokRaw.length === 0) return null;
+
+  // 1. Exato
+  const exato = list.find((f) => normalizar(f.nome) === normRaw);
+  if (exato) return exato;
+
+  // 2. Token overlap
+  let melhor: { f: Franquia; overlap: number; cobertura: number } | null = null;
+  for (const f of list) {
+    const tokF = tokensNome(f.nome);
+    if (tokF.length === 0) continue;
+    const setF = new Set(tokF);
+    let overlap = 0;
+    for (const t of tokRaw) if (setF.has(t)) overlap++;
+    if (overlap === 0) continue;
+    const cobertura = overlap / tokRaw.length;
+    const minNecessario = tokRaw.length === 1 ? 1 : 2;
+    if (overlap < minNecessario) continue;
+    if (
+      !melhor ||
+      overlap > melhor.overlap ||
+      (overlap === melhor.overlap && cobertura > melhor.cobertura)
+    ) {
+      melhor = { f, overlap, cobertura };
+    }
+  }
+  return melhor ? melhor.f : null;
+}
+
 function FormOcorrenciaDireta({
   initialCodigo,
   initialFranquia,
@@ -3411,6 +3470,14 @@ function FormOcorrenciaDireta({
   initialDescricao: string;
 }) {
   const [open, setOpen] = useState(false);
+
+  // Token state (necessario pro INSERT em ocorrencias + upload da evidencia)
+  const [tokenStatus, setTokenStatus] = useState<{ has_token: boolean; valid: boolean; expires_in_seconds?: number; email?: string; full_name?: string } | null>(null);
+  const [refreshingToken, setRefreshingToken] = useState(false);
+  const [showBootstrap, setShowBootstrap] = useState(false);
+  const [tokenAccessInput, setTokenAccessInput] = useState("");
+  const [tokenRefreshInput, setTokenRefreshInput] = useState("");
+  const [tokenMsg, setTokenMsg] = useState<string | null>(null);
 
   const [envolveImovel, setEnvolveImovel] = useState(true);
   const [codigo, setCodigo] = useState(initialCodigo);
@@ -3423,6 +3490,7 @@ function FormOcorrenciaDireta({
   const [subcategorias, setSubcategorias] = useState<Subcat[]>([]);
   const [franquias, setFranquias] = useState<Franquia[]>([]);
   const [loadingDropdowns, setLoadingDropdowns] = useState(false);
+  const [autoFillStatus, setAutoFillStatus] = useState<string>("");
 
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState<{ success: boolean; message: string; url?: string } | null>(null);
@@ -3430,6 +3498,39 @@ function FormOcorrenciaDireta({
   useEffect(() => { setCodigo(initialCodigo); }, [initialCodigo]);
   useEffect(() => { setFranquiaNome(initialFranquia); }, [initialFranquia]);
   useEffect(() => { setDescricao(initialDescricao); }, [initialDescricao]);
+
+  // Auto-fill franquia: ao digitar codigo, busca franquia no Pipe 1 e
+  // mapeia pra um nome da lista do lovable (best match).
+  useEffect(() => {
+    const code = codigo.trim();
+    if (code.length < 3 || franquias.length === 0) return;
+    let cancel = false;
+    const timer = setTimeout(async () => {
+      setAutoFillStatus("Buscando franquia...");
+      try {
+        const r = await fetch(`/api/get-franqueado?code=${encodeURIComponent(code)}`);
+        const d = await r.json();
+        if (cancel) return;
+        const rawName: string = (d?.franqueado || "").trim();
+        if (!rawName) {
+          setAutoFillStatus("Franquia não encontrada no Pipe 1");
+          return;
+        }
+        const match = matchFranquia(rawName, franquias);
+        if (match) {
+          setFranquiaNome(match.nome);
+          setAutoFillStatus(`✅ Match: "${rawName}" → "${match.nome}"`);
+        } else {
+          // Mantem o nome bruto pro user decidir
+          setFranquiaNome(rawName);
+          setAutoFillStatus(`⚠️ "${rawName}" não bate com nenhuma da lista — confira manualmente`);
+        }
+      } catch {
+        if (!cancel) setAutoFillStatus("Erro ao buscar franquia");
+      }
+    }, 500);
+    return () => { cancel = true; clearTimeout(timer); };
+  }, [codigo, franquias]);
 
   const carregarDropdowns = async () => {
     setLoadingDropdowns(true);
@@ -3456,6 +3557,76 @@ function FormOcorrenciaDireta({
     if (open && subcategorias.length === 0) carregarDropdowns();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  const carregarStatusToken = async () => {
+    try {
+      const r = await fetch("/api/lovable/token");
+      if (r.ok) setTokenStatus(await r.json());
+    } catch { /* silencioso */ }
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    carregarStatusToken();
+    const t = setInterval(carregarStatusToken, 30_000);
+    return () => clearInterval(t);
+  }, [open]);
+
+  const refreshToken = async () => {
+    setRefreshingToken(true);
+    setTokenMsg(null);
+    try {
+      const r = await fetch("/api/lovable/token/refresh", { method: "POST" });
+      const d = await r.json();
+      if (r.ok) {
+        setTokenStatus(d);
+        setTokenMsg(`✅ Token atualizado — expira em ${Math.round((d.expires_in_seconds || 0) / 60)}min`);
+      } else {
+        setTokenMsg(`❌ ${d.error || "Erro"}`);
+      }
+    } finally {
+      setRefreshingToken(false);
+    }
+  };
+
+  const salvarToken = async () => {
+    setTokenMsg(null);
+    const accessRaw = tokenAccessInput.trim();
+    const refreshRaw = tokenRefreshInput.trim();
+    if (!accessRaw || !refreshRaw) {
+      setTokenMsg("❌ Preencha access_token e refresh_token");
+      return;
+    }
+    let body: any = { access_token: accessRaw, refresh_token: refreshRaw };
+    if (accessRaw.startsWith("{")) {
+      try { body = JSON.parse(accessRaw); } catch { /* string */ }
+    }
+    try {
+      const r = await fetch("/api/lovable/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const d = await r.json();
+      if (r.ok) {
+        setTokenMsg(`✅ Token salvo (${d.full_name || d.email || d.user_id})`);
+        setTokenAccessInput(""); setTokenRefreshInput("");
+        setShowBootstrap(false);
+        carregarStatusToken();
+      } else {
+        setTokenMsg(`❌ ${d.error || "Erro"}`);
+      }
+    } catch (e) {
+      setTokenMsg(`❌ ${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
+
+  const limparToken = async () => {
+    if (!confirm("Apagar token do lovable?")) return;
+    await fetch("/api/lovable/token", { method: "DELETE" });
+    setTokenStatus({ has_token: false, valid: false });
+    setTokenMsg("Token apagado");
+  };
 
   const subcatSelecionada = subcategorias.find((s) => s.id === subcategoriaId);
 
@@ -3489,6 +3660,9 @@ function FormOcorrenciaDireta({
       const d = await r.json();
       if (d.success) {
         setResult({ success: true, message: `Ocorrência registrada (${d.id?.slice(0, 8)}...)`, url: d.url });
+      } else if (d.needs_token_bootstrap) {
+        setResult({ success: false, message: "Sem token lovable — cadastre abaixo" });
+        setShowBootstrap(true);
       } else {
         setResult({ success: false, message: d.error || "Erro" });
       }
@@ -3500,6 +3674,7 @@ function FormOcorrenciaDireta({
   };
 
   const podeEnviar =
+    tokenStatus?.valid &&
     franquiaNome.trim() &&
     descricao.trim() &&
     subcategoriaId &&
@@ -3517,6 +3692,45 @@ function FormOcorrenciaDireta({
 
       {open && (
         <div className="mt-3 space-y-3 bg-purple-50/40 border border-purple-200 rounded-lg p-4">
+          {/* Token Panel — necessario pra INSERT em ocorrencias e upload da evidencia */}
+          <div className={`rounded-md border p-3 text-xs ${tokenStatus?.valid ? "bg-green-50 border-green-200 text-green-800" : tokenStatus?.has_token ? "bg-yellow-50 border-yellow-200 text-yellow-800" : "bg-red-50 border-red-200 text-red-800"}`}>
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div>
+                {tokenStatus === null ? "Verificando token…" :
+                  tokenStatus.valid ? <>✅ {tokenStatus.full_name || tokenStatus.email} — expira em <strong>{Math.max(0, Math.round((tokenStatus.expires_in_seconds || 0) / 60))}min</strong></> :
+                  tokenStatus.has_token ? "⚠️ Token expirado — clique Atualizar" :
+                  "❌ Sem token cadastrado — clique Cadastrar token"}
+              </div>
+              <div className="flex gap-2">
+                {tokenStatus?.has_token && (
+                  <button onClick={refreshToken} disabled={refreshingToken} className="bg-white border border-current px-2.5 py-1 rounded text-[11px] font-medium hover:bg-current hover:text-white disabled:opacity-50">
+                    {refreshingToken ? "..." : "Atualizar"}
+                  </button>
+                )}
+                <button onClick={() => setShowBootstrap((v) => !v)} className="bg-white border border-current px-2.5 py-1 rounded text-[11px] font-medium hover:bg-current hover:text-white">
+                  {showBootstrap ? "Cancelar" : tokenStatus?.has_token ? "Resetar" : "Cadastrar token"}
+                </button>
+                {tokenStatus?.has_token && (
+                  <button onClick={limparToken} className="bg-white border border-current px-2.5 py-1 rounded text-[11px] font-medium hover:bg-red-600 hover:text-white hover:border-red-600">
+                    Apagar
+                  </button>
+                )}
+              </div>
+            </div>
+            {tokenMsg && <div className="mt-2 text-[11px]">{tokenMsg}</div>}
+            {showBootstrap && (
+              <div className="mt-3 space-y-2">
+                <p className="text-[11px] leading-relaxed">
+                  Em <a href="https://preview--centraldeocorrenciasemultas.lovable.app/adm/funil-ocorrencias" target="_blank" rel="noopener" className="underline">centraldeocorrenciasemultas.lovable.app</a> → F12 → Console:
+                </p>
+                <pre className="bg-gray-900 text-green-300 text-[10px] p-2 rounded overflow-x-auto select-all">{`(()=>{const e=Object.entries(localStorage).find(([k])=>k.includes('supabase')||k.startsWith('sb-'));if(!e)return'sem auth';const v=e[1].startsWith('base64-')?atob(e[1].slice(7)):e[1];const j=JSON.parse(v);console.log('access_token:',j.access_token);console.log('refresh_token:',j.refresh_token);copy(j.refresh_token);return'refresh_token copiado'})()`}</pre>
+                <textarea value={tokenAccessInput} onChange={(e) => setTokenAccessInput(e.target.value)} placeholder="access_token (eyJhbGc...) ou JSON inteiro" rows={3} className="w-full border border-current rounded px-2 py-1 text-[10px] font-mono bg-white text-gray-900" />
+                <input type="text" value={tokenRefreshInput} onChange={(e) => setTokenRefreshInput(e.target.value)} placeholder="refresh_token (deixe vazio se colou JSON)" className="w-full border border-current rounded px-2 py-1 text-[10px] font-mono bg-white text-gray-900" />
+                <button onClick={salvarToken} disabled={!tokenAccessInput.trim()} className="bg-current text-white px-3 py-1.5 rounded text-[11px] font-medium disabled:opacity-50">Salvar Token</button>
+              </div>
+            )}
+          </div>
+
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-xs text-gray-700 block mb-1">A reclamação envolve algum imóvel da Seazone? *</label>
@@ -3538,6 +3752,7 @@ function FormOcorrenciaDireta({
               {franquias.map((f) => <option key={f.id} value={f.nome} />)}
             </datalist>
             <p className="text-[10px] text-gray-400 mt-0.5">{franquias.length} franquias carregadas{loadingDropdowns ? " (carregando...)" : ""}</p>
+            {autoFillStatus && <p className="text-[10px] mt-0.5 text-purple-700">{autoFillStatus}</p>}
           </div>
 
           <div>

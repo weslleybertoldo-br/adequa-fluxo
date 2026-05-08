@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/pipefy";
-import { LOVABLE_SUPA_ANON, LOVABLE_SUPA_URL } from "@/lib/lovable-auth";
+import {
+  LOVABLE_SUPA_ANON,
+  LOVABLE_SUPA_URL,
+  getValidLovableAccessTokenAndUpdate,
+} from "@/lib/lovable-auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -46,9 +50,22 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
   }
 
-  // Anon-first: tentamos INSERT com anon key. Se RLS bloquear, instrucao
-  // futura sera bootstrap de JWT (mesmo padrao do suporte-ops).
-  const authBearer = `Bearer ${LOVABLE_SUPA_ANON}`;
+  // Storage bucket `evidencias` exige JWT (RLS); INSERT em `ocorrencias`
+  // tambem requer JWT do user. Token via cookie httpOnly criptografado.
+  const cookieHolder = NextResponse.json({});
+  let userToken: string;
+  try {
+    userToken = await getValidLovableAccessTokenAndUpdate(req, cookieHolder);
+  } catch (e) {
+    return NextResponse.json(
+      {
+        error: e instanceof Error ? e.message : String(e),
+        needs_token_bootstrap: true,
+      },
+      { status: 401 }
+    );
+  }
+  const authBearer = `Bearer ${userToken}`;
 
   try {
     const formData = await req.formData();
@@ -175,12 +192,15 @@ export async function POST(req: NextRequest) {
       );
     }
     const ocorrencia = arr[0];
-    return NextResponse.json({
+    const finalRes = NextResponse.json({
       success: true,
       id: ocorrencia.id,
       url: `https://preview--centraldeocorrenciasemultas.lovable.app/adm/funil-ocorrencias?id=${ocorrencia.id}`,
       uploaded_url: urlAnexo,
     });
+    const refreshedCookie = cookieHolder.headers.get("set-cookie");
+    if (refreshedCookie) finalRes.headers.set("set-cookie", refreshedCookie);
+    return finalRes;
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? e.message : String(e) },
