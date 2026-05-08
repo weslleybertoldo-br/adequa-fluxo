@@ -3,7 +3,6 @@ import { requireAuth } from "@/lib/pipefy";
 import {
   SUPORTE_OPS_SUPA_ANON,
   SUPORTE_OPS_SUPA_URL,
-  getValidAccessTokenAndUpdate,
 } from "@/lib/suporte-ops-auth";
 import { SUPORTE_USER_WESLLEY } from "@/lib/suporte-ops";
 
@@ -48,20 +47,8 @@ export async function POST(req: NextRequest) {
       ? (urgencia as string).toLowerCase()
       : "media";
 
-    // Cookie holder pra carregar refresh, se necessario
-    const cookieHolder = NextResponse.json({});
-    let accessToken: string;
-    try {
-      accessToken = await getValidAccessTokenAndUpdate(req, cookieHolder);
-    } catch (e) {
-      return NextResponse.json(
-        {
-          error: e instanceof Error ? e.message : String(e),
-          needs_token_bootstrap: true,
-        },
-        { status: 401 }
-      );
-    }
+    // Anon-only: RLS de `cards` libera INSERT pra anon (mesmo padrao da
+    // Troca de Codigo). Sem necessidade de JWT/bootstrap.
 
     const camposPreenchidos = {
       novo: {
@@ -96,7 +83,7 @@ export async function POST(req: NextRequest) {
       method: "POST",
       headers: {
         apikey: SUPORTE_OPS_SUPA_ANON,
-        Authorization: `Bearer ${accessToken}`,
+        Authorization: `Bearer ${SUPORTE_OPS_SUPA_ANON}`,
         "Content-Type": "application/json",
         Prefer: "return=representation",
       },
@@ -120,15 +107,11 @@ export async function POST(req: NextRequest) {
     }
 
     const card = arr[0];
-    const finalRes = NextResponse.json({
+    return NextResponse.json({
       success: true,
       cardId: card.id,
       url: `https://suporte-ops.seazone.properties/kanban?card=${card.id}`,
     });
-    // Propaga eventual cookie atualizado pelo refresh
-    const refreshedCookie = cookieHolder.headers.get("set-cookie");
-    if (refreshedCookie) finalRes.headers.set("set-cookie", refreshedCookie);
-    return finalRes;
   } catch (err: unknown) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : String(err) },

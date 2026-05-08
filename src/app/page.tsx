@@ -3923,85 +3923,6 @@ function FormSuporte() {
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState<{ success: boolean; message: string; url?: string } | null>(null);
   const [copiedSuporte, setCopiedSuporte] = useState(false);
-  const [tokenStatus, setTokenStatus] = useState<{ has_token: boolean; valid: boolean; expires_in_seconds?: number; email?: string; expires_at?: number } | null>(null);
-  const [refreshingToken, setRefreshingToken] = useState(false);
-  const [showTokenBootstrap, setShowTokenBootstrap] = useState(false);
-  const [tokenAccessInput, setTokenAccessInput] = useState("");
-  const [tokenRefreshInput, setTokenRefreshInput] = useState("");
-  const [tokenMsg, setTokenMsg] = useState<string | null>(null);
-
-  const carregarStatusToken = async () => {
-    try {
-      const r = await fetch("/api/suporte-ops/token");
-      if (r.ok) setTokenStatus(await r.json());
-    } catch { /* silencioso */ }
-  };
-
-  useEffect(() => {
-    carregarStatusToken();
-    const t = setInterval(carregarStatusToken, 30_000);
-    return () => clearInterval(t);
-  }, []);
-
-  const refreshToken = async () => {
-    setRefreshingToken(true);
-    setTokenMsg(null);
-    try {
-      const r = await fetch("/api/suporte-ops/token/refresh", { method: "POST" });
-      const d = await r.json();
-      if (r.ok) {
-        setTokenStatus(d);
-        setTokenMsg(`✅ Token atualizado — expira em ${Math.round((d.expires_in_seconds || 0) / 60)}min`);
-      } else {
-        setTokenMsg(`❌ ${d.error || "Erro ao atualizar"}`);
-      }
-    } catch (e) {
-      setTokenMsg(`❌ ${e instanceof Error ? e.message : String(e)}`);
-    } finally {
-      setRefreshingToken(false);
-    }
-  };
-
-  const salvarTokenInicial = async () => {
-    setTokenMsg(null);
-    const accessRaw = tokenAccessInput.trim();
-    const refreshRaw = tokenRefreshInput.trim();
-    if (!accessRaw || !refreshRaw) {
-      setTokenMsg("❌ Preencha access_token e refresh_token");
-      return;
-    }
-    // Tenta parsear como JSON inteiro se for o caso
-    let body: any = { access_token: accessRaw, refresh_token: refreshRaw };
-    if (accessRaw.startsWith("{")) {
-      try { body = JSON.parse(accessRaw); } catch { /* trata como string */ }
-    }
-    try {
-      const r = await fetch("/api/suporte-ops/token", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const d = await r.json();
-      if (r.ok) {
-        setTokenMsg(`✅ Token salvo (${d.email || d.user_id})`);
-        setTokenAccessInput("");
-        setTokenRefreshInput("");
-        setShowTokenBootstrap(false);
-        carregarStatusToken();
-      } else {
-        setTokenMsg(`❌ ${d.error || "Erro"}`);
-      }
-    } catch (e) {
-      setTokenMsg(`❌ ${e instanceof Error ? e.message : String(e)}`);
-    }
-  };
-
-  const limparToken = async () => {
-    if (!confirm("Apagar token do suporte-ops?")) return;
-    await fetch("/api/suporte-ops/token", { method: "DELETE" });
-    setTokenStatus({ has_token: false, valid: false });
-    setTokenMsg("Token apagado");
-  };
 
   const descBase = "Pessoal, boa tarde. Tudo bem?\nConseguem nos ajudar com o retorno da franquia?";
 
@@ -4050,10 +3971,6 @@ function FormSuporte() {
         setResult({ success: true, message: `Suporte criado em suporte-ops`, url: data.url });
         setCodigo("");
         setDescComplemento("");
-        carregarStatusToken();
-      } else if (data.needs_token_bootstrap) {
-        setResult({ success: false, message: `Sem token suporte-ops — clique "Cadastrar token" abaixo` });
-        setShowTokenBootstrap(true);
       } else {
         setResult({ success: false, message: data.error || "Erro ao criar" });
       }
@@ -4067,77 +3984,7 @@ function FormSuporte() {
   return (
     <section className="bg-white rounded-lg shadow p-6 mb-6">
       <h3 className="text-lg font-semibold mb-1">Suporte Franquias</h3>
-      <p className="text-xs text-gray-500 mb-2">Preencha e clique &quot;Enviar&quot;. O suporte será criado em <code className="text-[11px]">suporte-ops.seazone.properties</code>.</p>
-
-      {/* Painel de Token */}
-      <div className={`mb-4 rounded-md border p-3 text-xs ${tokenStatus?.valid ? "bg-green-50 border-green-200 text-green-800" : tokenStatus?.has_token ? "bg-yellow-50 border-yellow-200 text-yellow-800" : "bg-red-50 border-red-200 text-red-800"}`}>
-        <div className="flex items-center justify-between gap-2 flex-wrap">
-          <div>
-            {tokenStatus === null ? (
-              <span>Verificando token…</span>
-            ) : tokenStatus.valid ? (
-              <span>
-                ✅ Token <strong>{tokenStatus.email || ""}</strong> válido — expira em <strong>{Math.max(0, Math.round((tokenStatus.expires_in_seconds || 0) / 60))}min</strong>
-              </span>
-            ) : tokenStatus.has_token ? (
-              <span>⚠️ Token expirado — clique &quot;Atualizar&quot; pra refresh</span>
-            ) : (
-              <span>❌ Sem token cadastrado — clique &quot;Cadastrar token&quot;</span>
-            )}
-          </div>
-          <div className="flex gap-2">
-            {tokenStatus?.has_token && (
-              <button onClick={refreshToken} disabled={refreshingToken} className="bg-white border border-current px-2.5 py-1 rounded text-[11px] font-medium hover:bg-current hover:text-white disabled:opacity-50">
-                {refreshingToken ? "..." : "Atualizar Token"}
-              </button>
-            )}
-            <button onClick={() => setShowTokenBootstrap((v) => !v)} className="bg-white border border-current px-2.5 py-1 rounded text-[11px] font-medium hover:bg-current hover:text-white">
-              {showTokenBootstrap ? "Cancelar" : tokenStatus?.has_token ? "Resetar token" : "Cadastrar token"}
-            </button>
-            {tokenStatus?.has_token && (
-              <button onClick={limparToken} className="bg-white border border-current px-2.5 py-1 rounded text-[11px] font-medium hover:bg-red-600 hover:text-white hover:border-red-600">
-                Apagar
-              </button>
-            )}
-          </div>
-        </div>
-        {tokenMsg && <div className="mt-2 text-[11px]">{tokenMsg}</div>}
-        {showTokenBootstrap && (
-          <div className="mt-3 space-y-2">
-            <p className="text-[11px] leading-relaxed">
-              1. Acesse <a href="https://suporte-ops.seazone.properties" target="_blank" rel="noopener" className="underline">suporte-ops.seazone.properties</a> e faça login.
-              <br />2. F12 → aba <strong>Console</strong> → cole e enter:
-            </p>
-            <pre className="bg-gray-900 text-green-300 text-[10px] p-2 rounded overflow-x-auto select-all">{`copy(JSON.parse(Object.entries(localStorage).find(([k])=>k.startsWith('sb-')&&k.endsWith('-auth-token'))[1]))`}</pre>
-            <p className="text-[11px] leading-relaxed">
-              Isso copia o JSON inteiro pra clipboard. Cole no <strong>access_token</strong> abaixo (auto-detecta) — OU preenche os 2 campos manualmente:
-            </p>
-            <div>
-              <label className="text-[10px] block mb-0.5">access_token (JWT) ou JSON completo</label>
-              <textarea
-                value={tokenAccessInput}
-                onChange={(e) => setTokenAccessInput(e.target.value)}
-                placeholder="eyJhbGciOi... ou {access_token:..., refresh_token:..., expires_at:...}"
-                rows={3}
-                className="w-full border border-current rounded px-2 py-1 text-[10px] font-mono bg-white text-gray-900"
-              />
-            </div>
-            <div>
-              <label className="text-[10px] block mb-0.5">refresh_token <span className="text-[9px] opacity-70">(deixe vazio se colou JSON completo acima)</span></label>
-              <input
-                type="text"
-                value={tokenRefreshInput}
-                onChange={(e) => setTokenRefreshInput(e.target.value)}
-                placeholder="ex: 5vs7jzlyctsf"
-                className="w-full border border-current rounded px-2 py-1 text-[10px] font-mono bg-white text-gray-900"
-              />
-            </div>
-            <button onClick={salvarTokenInicial} disabled={!tokenAccessInput.trim()} className="bg-current text-white px-3 py-1.5 rounded text-[11px] font-medium disabled:opacity-50">
-              Salvar Token
-            </button>
-          </div>
-        )}
-      </div>
+      <p className="text-xs text-gray-500 mb-4">Preencha e clique &quot;Enviar&quot;. O suporte será criado em <code className="text-[11px]">suporte-ops.seazone.properties</code>.</p>
 
       <div className="space-y-4">
         <div>
