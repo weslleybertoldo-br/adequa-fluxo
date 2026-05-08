@@ -28,9 +28,9 @@ function escapeStorageName(name: string): string {
   return name.replace(/[^A-Za-z0-9._-]/g, "_");
 }
 
-function gravidadeFmt(gravidade: string, pontos: number): string {
-  const plural = pontos === 1 ? "ponto" : "pontos";
-  return `${gravidade} - ${pontos} ${plural}`;
+function categoriaSingular(plural: string): string {
+  // Padrao das ocorrencias antigas: "Ocorrencia com X" (singular)
+  return plural.replace(/^Ocorrências/i, "Ocorrência");
 }
 
 function mesAplicacao(): string {
@@ -137,12 +137,16 @@ export async function POST(req: NextRequest) {
       nomeAnexo = file.name;
     }
 
-    // 2. INSERT
-    const titulo = descricao.split("\n")[0].slice(0, 200);
-    const gravidade =
-      subcategoriaGravidade && subcategoriaPontos
-        ? gravidadeFmt(subcategoriaGravidade, subcategoriaPontos)
-        : "";
+    // 2. INSERT — padroes alinhados com ocorrencias historicas:
+    //   - titulo = codigo do imovel (nao a descricao)
+    //   - gravidade = "leve" | "media" | "grave" (sem " - N pontos")
+    //   - categoria = singular ("Ocorrência com a Seazone")
+    const titulo =
+      envolve_imovel && codigoImovel ? codigoImovel : descricao.split("\n")[0].slice(0, 200);
+    const gravidade = subcategoriaGravidade || "";
+    const categoria = subcategoriaCategoria
+      ? categoriaSingular(subcategoriaCategoria)
+      : "";
 
     const body = {
       titulo,
@@ -159,7 +163,7 @@ export async function POST(req: NextRequest) {
       nome_anexo: nomeAnexo,
       gravidade,
       subcategoria: subcategoriaCodigo,
-      categoria: subcategoriaCategoria,
+      categoria,
       pontos: subcategoriaPontos || null,
       mes_aplicacao: mesAplicacao(),
     };
