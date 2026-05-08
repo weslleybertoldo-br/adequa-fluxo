@@ -288,6 +288,7 @@ interface EnxovalCard {
   recordId: string;
   attachments: PdfAttachment[];
   defaultPdf: { fileName: string; path: string } | null;
+  hasGeral?: boolean;
 }
 
 type ProcessMode = "anexo" | "vistoria";
@@ -654,6 +655,9 @@ function TabProcessamento() {
                     </span>
                     <div>
                       <CopyableCode code={c.title} className="text-sm" />
+                      {c.hasGeral && !c.hasRecord && (
+                        <span className="text-xs font-bold text-green-700 ml-2">(GERAL)</span>
+                      )}
                       {c.hasRecord && (
                         <span className="text-xs text-green-600 ml-2">Registro #{c.recordId}</span>
                       )}

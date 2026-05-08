@@ -97,6 +97,7 @@ export async function GET(req: NextRequest) {
       );
       const defaultPdf = exactGeral || anyEnxoval || null;
 
+      const hasGeral = !!exactGeral;
       return {
         id: card.id,
         title: card.title,
@@ -107,13 +108,17 @@ export async function GET(req: NextRequest) {
         defaultPdf: defaultPdf
           ? { fileName: defaultPdf.fileName, path: defaultPdf.path }
           : null,
+        hasGeral,
       };
     });
 
-    // Ordenar: sem registro primeiro, depois com registro
+    // Ordenar: GERAL anexado primeiro (sem registro), sem registro depois,
+    // com registro por ultimo. Dentro de cada grupo, alfabetico.
     result.sort((a, b) => {
-      if (a.hasRecord === b.hasRecord) return a.title.localeCompare(b.title);
-      return a.hasRecord ? 1 : -1;
+      const ag = !a.hasRecord && a.hasGeral ? 0 : !a.hasRecord ? 1 : 2;
+      const bg = !b.hasRecord && b.hasGeral ? 0 : !b.hasRecord ? 1 : 2;
+      if (ag !== bg) return ag - bg;
+      return a.title.localeCompare(b.title);
     });
 
     return NextResponse.json({
