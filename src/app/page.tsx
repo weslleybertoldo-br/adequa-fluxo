@@ -138,6 +138,17 @@ function hasDecorLabel(labels: string[] | undefined | null): boolean {
   return labels.some((l) => typeof l === "string" && l.trim().toUpperCase() === "DECOR");
 }
 
+function isFase10(text: string | undefined | null): boolean {
+  if (!text || typeof text !== "string") return false;
+  return /\bfase\s*10\b/i.test(text);
+}
+
+function labelClass(label: string): string {
+  if (isFase10(label))
+    return "text-[10px] font-bold text-red-700 bg-red-100 px-1.5 py-0.5 rounded";
+  return "text-[10px] bg-gray-200 px-1.5 py-0.5 rounded";
+}
+
 function CopyableCode({ code, className = "text-sm" }: { code: string; className?: string }) {
   const [copied, setCopied] = useState(false);
   return (
@@ -1850,7 +1861,9 @@ function TabUpdateCards({ apiRoute, phaseName, phaseDescription, showCopyButton 
                       <div className="flex items-center gap-2">
                         <CopyableCode code={c.title} className="text-sm" />
                         {c.pipe1Phase && (
-                          <span className="text-[10px] font-semibold text-green-700 bg-green-100 px-1.5 py-0.5 rounded">
+                          <span className={isFase10(c.pipe1Phase)
+                            ? "text-[10px] font-bold text-red-700 bg-red-100 px-1.5 py-0.5 rounded"
+                            : "text-[10px] font-semibold text-green-700 bg-green-100 px-1.5 py-0.5 rounded"}>
                             Pipe 1 · {c.pipe1Phase}
                           </span>
                         )}
@@ -1858,7 +1871,7 @@ function TabUpdateCards({ apiRoute, phaseName, phaseDescription, showCopyButton 
                       {c.labels.length > 0 && (
                         <div className="flex gap-1 mt-1">
                           {c.labels.map((l) => (
-                            <span key={l} className="text-[10px] bg-gray-200 px-1.5 py-0.5 rounded">{l}</span>
+                            <span key={l} className={labelClass(l)}>{l}</span>
                           ))}
                         </div>
                       )}
@@ -1942,7 +1955,7 @@ function TabUpdateCards({ apiRoute, phaseName, phaseDescription, showCopyButton 
                     {c.assignees.length > 0 && (
                       <span className="text-xs text-gray-400 ml-3">{c.assignees.join(", ")}</span>
                     )}
-                    {c.pipe1Phase && <span className="text-xs font-semibold text-green-700 bg-green-100 px-1.5 py-0.5 rounded ml-2">{c.pipe1Phase}</span>}
+                    {c.pipe1Phase && <span className={isFase10(c.pipe1Phase) ? "text-xs font-bold text-red-700 bg-red-100 px-1.5 py-0.5 rounded ml-2" : "text-xs font-semibold text-green-700 bg-green-100 px-1.5 py-0.5 rounded ml-2"}>{c.pipe1Phase}</span>}
                   </div>
                   <div className="flex items-center gap-2">
                     {cardStatus?.status === "updated" && <span className="text-green-600 text-xs">{cardStatus.message}</span>}
@@ -2035,7 +2048,7 @@ function TabUpdateCards({ apiRoute, phaseName, phaseDescription, showCopyButton 
                 {c.labels.length > 0 && (
                   <div className="flex gap-1 mb-3">
                     {c.labels.map((l) => (
-                      <span key={l} className="text-[10px] bg-gray-200 px-1.5 py-0.5 rounded">{l}</span>
+                      <span key={l} className={labelClass(l)}>{l}</span>
                     ))}
                   </div>
                 )}
@@ -2462,7 +2475,7 @@ function TabPhase5() {
                 {c.labels.length > 0 && (
                   <div className="flex gap-1 mb-3">
                     {c.labels.map((l) => (
-                      <span key={l} className="text-[10px] bg-gray-200 px-1.5 py-0.5 rounded">{l}</span>
+                      <span key={l} className={labelClass(l)}>{l}</span>
                     ))}
                   </div>
                 )}
@@ -2921,7 +2934,7 @@ function TabRevisao() {
                       <CopyableCode code={c.title} className="text-base" />
                       <span className="text-xs text-gray-500">Vencimento: {c.dueFormatted}</span>
                       {c.labels.map((l) => (
-                        <span key={l} className="text-[10px] bg-gray-200 px-1.5 py-0.5 rounded">{l}</span>
+                        <span key={l} className={labelClass(l)}>{l}</span>
                       ))}
                     </div>
                     <div className="flex items-center gap-2">
@@ -3042,7 +3055,7 @@ function TabRevisao() {
                       <CopyableCode code={c.title} className="text-base" />
                       <span className="text-xs text-gray-500">Vencimento: {c.dueFormatted}</span>
                       {c.labels.map((l) => (
-                        <span key={l} className="text-[10px] bg-gray-200 px-1.5 py-0.5 rounded">{l}</span>
+                        <span key={l} className={labelClass(l)}>{l}</span>
                       ))}
                     </div>
                     <div className="flex items-center gap-2">
@@ -3233,7 +3246,7 @@ function TabComplexa() {
               {c.labels.length > 0 && (
                 <div className="flex gap-1 mb-3">
                   {c.labels.map((l) => (
-                    <span key={l} className="text-[10px] bg-gray-200 px-1.5 py-0.5 rounded">{l}</span>
+                    <span key={l} className={labelClass(l)}>{l}</span>
                   ))}
                 </div>
               )}
