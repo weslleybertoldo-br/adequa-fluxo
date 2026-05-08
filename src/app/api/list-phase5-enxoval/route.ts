@@ -17,6 +17,7 @@ async function getCardsWithEnxovalInfo(): Promise<any[]> {
             node {
               id
               title
+              labels { id name }
               attachments { path url createdAt }
               fields {
                 name
@@ -99,6 +100,7 @@ export async function GET(req: NextRequest) {
       return {
         id: card.id,
         title: card.title,
+        labels: (card.labels || []).map((l: any) => l.name),
         hasRecord,
         recordId,
         attachments,

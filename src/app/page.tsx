@@ -133,6 +133,11 @@ function SearchableSelect({ label, value, onChange, options, placeholder }: {
 // COMPONENTE: Código copiável
 // =====================
 
+function hasDecorLabel(labels: string[] | undefined | null): boolean {
+  if (!labels || !Array.isArray(labels)) return false;
+  return labels.some((l) => typeof l === "string" && l.trim().toUpperCase() === "DECOR");
+}
+
 function CopyableCode({ code, className = "text-sm" }: { code: string; className?: string }) {
   const [copied, setCopied] = useState(false);
   return (
@@ -1837,7 +1842,7 @@ function TabUpdateCards({ apiRoute, phaseName, phaseDescription, showCopyButton 
           <h2 className="text-lg font-semibold mb-3">Cards na {phaseName}</h2>
           <div className="space-y-2">
             {cards.map((c) => (
-              <div key={c.id} className={`px-4 py-3 rounded-md border ${c.skip ? "bg-yellow-50 border-yellow-200" : "bg-gray-50 border-gray-200"}`}>
+              <div key={c.id} className={`px-4 py-3 rounded-md border ${hasDecorLabel(c.labels) ? "bg-green-50 border-green-300" : c.skip ? "bg-yellow-50 border-yellow-200" : "bg-gray-50 border-gray-200"}`}>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <span className="text-lg">{c.skip ? "⏭️" : "📋"}</span>
@@ -1929,7 +1934,7 @@ function TabUpdateCards({ apiRoute, phaseName, phaseDescription, showCopyButton 
             const cardStatus = ativosStatuses[c.id];
             const isUpdating = ativosUpdating === c.id;
             return (
-              <div key={c.id} className={`bg-white rounded-lg shadow p-5 border-l-4 ${cardStatus?.status === "updated" ? "border-l-green-500" : cardStatus?.status === "error" ? "border-l-red-500" : "border-l-blue-500"}`}>
+              <div key={c.id} className={`rounded-lg shadow p-5 border-l-4 ${cardStatus?.status === "updated" ? "border-l-green-500 bg-white" : cardStatus?.status === "error" ? "border-l-red-500 bg-white" : hasDecorLabel(c.labels) ? "border-l-green-500 bg-green-50" : "border-l-blue-500 bg-white"}`}>
                 <div className="flex items-center justify-between mb-3">
                   <div>
                     <CopyableCode code={c.title} className="text-base" />
@@ -2406,7 +2411,7 @@ function TabPhase5() {
             const cardStatus = cardStatuses[c.id];
             const isUpdating = updatingCard === c.id;
             return (
-              <div key={c.id} className={`bg-white rounded-lg shadow p-5 border-l-4 ${cardStatus?.status === "updated" ? "border-l-green-500" : cardStatus?.status === "error" ? "border-l-red-500" : "border-l-blue-500"}`}>
+              <div key={c.id} className={`rounded-lg shadow p-5 border-l-4 ${cardStatus?.status === "updated" ? "border-l-green-500 bg-white" : cardStatus?.status === "error" ? "border-l-red-500 bg-white" : hasDecorLabel(c.labels) ? "border-l-green-500 bg-green-50" : "border-l-blue-500 bg-white"}`}>
                 {/* Header */}
                 <div className="flex items-center justify-between mb-3">
                   <div>
