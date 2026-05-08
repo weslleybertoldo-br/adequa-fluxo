@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, type ReactNode } from "react";
+import { useState, useRef, useEffect, useMemo, type ReactNode } from "react";
 
 // =====================
 // COMPONENTE: Tooltip expandível ao passar o mouse
@@ -3806,6 +3806,211 @@ function FormOcorrenciaDireta({
   );
 }
 
+// ===========================
+// Modal de relatorio (ocorrencias e suportes)
+// ===========================
+
+interface OcorrenciaItem {
+  id: string;
+  codigo_imovel: string;
+  franquia_nome: string;
+  area_origem: string;
+  subcategoria: string | null;
+  categoria: string | null;
+  gravidade: string | null;
+  pontos: number | null;
+  status_etapa: string;
+  criado_em: string;
+  excluido?: boolean;
+}
+interface SuporteItem {
+  id: string;
+  codigo_imovel: string;
+  status: string;
+  urgencia: string | null;
+  created_at: string;
+  area: { nome: string } | null;
+  processo: { nome: string } | null;
+}
+
+function startOfWeek(d: Date): Date {
+  const x = new Date(d);
+  const dow = (x.getDay() + 6) % 7; // segunda=0
+  x.setDate(x.getDate() - dow);
+  x.setHours(0, 0, 0, 0);
+  return x;
+}
+
+function fmtDateBR(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleDateString("pt-BR", { timeZone: "America/Maceio" });
+}
+function fmtMonthBR(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleDateString("pt-BR", { timeZone: "America/Maceio", year: "numeric", month: "long" });
+}
+function weekKey(iso: string): string {
+  const d = new Date(iso);
+  const ws = startOfWeek(d);
+  const we = new Date(ws); we.setDate(we.getDate() + 6);
+  return `${ws.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })} → ${we.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}`;
+}
+
+function RelatorioModal({ tipo, onClose }: { tipo: "ocorrencia" | "suporte"; onClose: () => void }) {
+  const [loading, setLoading] = useState(true);
+  const [erro, setErro] = useState<string | null>(null);
+  const [items, setItems] = useState<any[]>([]);
+  const [filtroArea, setFiltroArea] = useState<string>("");
+  const [view, setView] = useState<"lista" | "semana" | "mes">("mes");
+
+  useEffect(() => {
+    let cancel = false;
+    (async () => {
+      try {
+        const url = tipo === "ocorrencia" ? "/api/relatorio-ocorrencias" : "/api/relatorio-suportes";
+        const r = await fetch(url);
+        const d = await r.json();
+        if (cancel) return;
+        if (!r.ok) {
+          setErro(d.error || "Erro");
+        } else {
+          setItems(Array.isArray(d) ? d : []);
+        }
+      } catch (e) {
+        if (!cancel) setErro(e instanceof Error ? e.message : String(e));
+      } finally {
+        if (!cancel) setLoading(false);
+      }
+    })();
+    return () => { cancel = true; };
+  }, [tipo]);
+
+  const filtrados = useMemo(() => {
+    if (tipo === "ocorrencia") {
+      return (items as OcorrenciaItem[]).filter((o) => !o.excluido);
+    }
+    if (filtroArea) {
+      return (items as SuporteItem[]).filter((s) => s.area?.nome === filtroArea);
+    }
+    return items as SuporteItem[];
+  }, [items, filtroArea, tipo]);
+
+  const dataField = tipo === "ocorrencia" ? "criado_em" : "created_at";
+  const areasUnicas = useMemo(() => {
+    if (tipo !== "suporte") return [];
+    const set = new Set<string>();
+    for (const s of items as SuporteItem[]) if (s.area?.nome) set.add(s.area.nome);
+    return Array.from(set).sort();
+  }, [items, tipo]);
+
+  // Agrupamentos
+  const porMes = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const x of filtrados) {
+      const k = fmtMonthBR((x as any)[dataField]);
+      map.set(k, (map.get(k) || 0) + 1);
+    }
+    return Array.from(map.entries());
+  }, [filtrados, dataField]);
+
+  const porSemana = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const x of filtrados) {
+      const k = weekKey((x as any)[dataField]);
+      map.set(k, (map.get(k) || 0) + 1);
+    }
+    return Array.from(map.entries());
+  }, [filtrados, dataField]);
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-4 border-b">
+          <h3 className="text-lg font-semibold">
+            {tipo === "ocorrencia" ? "Minhas ocorrências abertas" : "Meus suportes abertos"} ({filtrados.length})
+          </h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
+        </div>
+
+        <div className="px-4 py-2 border-b flex flex-wrap gap-2 items-center">
+          <div className="flex gap-1">
+            <button onClick={() => setView("mes")} className={`px-3 py-1 rounded text-xs font-medium ${view === "mes" ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-700"}`}>Por mês</button>
+            <button onClick={() => setView("semana")} className={`px-3 py-1 rounded text-xs font-medium ${view === "semana" ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-700"}`}>Por semana</button>
+            <button onClick={() => setView("lista")} className={`px-3 py-1 rounded text-xs font-medium ${view === "lista" ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-700"}`}>Lista</button>
+          </div>
+          {tipo === "suporte" && areasUnicas.length > 0 && (
+            <select value={filtroArea} onChange={(e) => setFiltroArea(e.target.value)} className="border border-gray-300 rounded px-2 py-1 text-xs ml-auto">
+              <option value="">Todas as áreas</option>
+              {areasUnicas.map((a) => <option key={a} value={a}>{a}</option>)}
+            </select>
+          )}
+        </div>
+
+        <div className="overflow-auto flex-1 p-4">
+          {loading && <p className="text-sm text-gray-500">Carregando...</p>}
+          {erro && <p className="text-sm text-red-600">❌ {erro}</p>}
+          {!loading && !erro && (
+            <>
+              {view === "mes" && (
+                <table className="w-full text-sm">
+                  <thead><tr className="border-b"><th className="text-left py-2">Mês</th><th className="text-right py-2">Total</th></tr></thead>
+                  <tbody>
+                    {porMes.map(([k, v]) => (
+                      <tr key={k} className="border-b border-gray-100"><td className="py-1.5 capitalize">{k}</td><td className="py-1.5 text-right font-medium">{v}</td></tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+              {view === "semana" && (
+                <table className="w-full text-sm">
+                  <thead><tr className="border-b"><th className="text-left py-2">Semana</th><th className="text-right py-2">Total</th></tr></thead>
+                  <tbody>
+                    {porSemana.map(([k, v]) => (
+                      <tr key={k} className="border-b border-gray-100"><td className="py-1.5">{k}</td><td className="py-1.5 text-right font-medium">{v}</td></tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+              {view === "lista" && tipo === "ocorrencia" && (
+                <table className="w-full text-xs">
+                  <thead><tr className="border-b text-left"><th className="py-2">Data</th><th>Código</th><th>Franquia</th><th>Subcat</th><th>Status</th></tr></thead>
+                  <tbody>
+                    {(filtrados as OcorrenciaItem[]).map((o) => (
+                      <tr key={o.id} className="border-b border-gray-100">
+                        <td className="py-1">{fmtDateBR(o.criado_em)}</td>
+                        <td className="font-mono">{o.codigo_imovel}</td>
+                        <td className="truncate max-w-[180px]">{o.franquia_nome}</td>
+                        <td>{o.subcategoria || "—"}</td>
+                        <td className="text-[10px]">{o.status_etapa}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+              {view === "lista" && tipo === "suporte" && (
+                <table className="w-full text-xs">
+                  <thead><tr className="border-b text-left"><th className="py-2">Data</th><th>Código</th><th>Área</th><th>Processo</th><th>Status</th></tr></thead>
+                  <tbody>
+                    {(filtrados as SuporteItem[]).map((s) => (
+                      <tr key={s.id} className="border-b border-gray-100">
+                        <td className="py-1">{fmtDateBR(s.created_at)}</td>
+                        <td className="font-mono">{s.codigo_imovel}</td>
+                        <td>{s.area?.nome || "—"}</td>
+                        <td className="truncate max-w-[160px]">{s.processo?.nome || "—"}</td>
+                        <td className="text-[10px]">{s.status}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function FormOcorrencia() {
   const [dias, setDias] = useState("");
   const [codigoOcorrencia, setCodigoOcorrencia] = useState("");
@@ -3848,15 +4053,43 @@ function FormOcorrencia() {
     return qs ? `${base}?${qs}` : base;
   };
 
+  const [showRelatorio, setShowRelatorio] = useState(false);
+
   return (
     <section className="bg-white rounded-lg shadow p-6">
+      <div className="mb-3 flex justify-end">
+        <button onClick={() => setShowRelatorio(true)} className="bg-purple-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-purple-700 transition-colors">
+          📊 Ver minhas ocorrências
+        </button>
+      </div>
+      {showRelatorio && <RelatorioModal tipo="ocorrencia" onClose={() => setShowRelatorio(false)} />}
+
       {/* 1. Registrar ocorrência no card */}
       <RegistrarOcorrenciaCard />
 
-      {/* 2. Registrar direto (sem Tampermonkey) */}
+      {/* 2. Textos copiar Sults */}
+      <div className="border-t border-gray-200 pt-4 mt-4 mb-4">
+        <h4 className="text-sm font-semibold text-gray-700 mb-2">Textos copiar Sults</h4>
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={() => copyText("Ocorrência registrada - Falta de retorno", "falta")}
+            className="bg-gray-100 text-gray-700 px-4 py-2 rounded-md text-sm font-medium hover:bg-gray-200 transition-colors"
+          >
+            {copied === "falta" ? "Copiado!" : "Ocorrência - Falta de retorno"}
+          </button>
+          <button
+            onClick={() => copyText("Ocorrência registrada - Não enviou os registros", "registros")}
+            className="bg-gray-100 text-gray-700 px-4 py-2 rounded-md text-sm font-medium hover:bg-gray-200 transition-colors"
+          >
+            {copied === "registros" ? "Copiado!" : "Ocorrência - Não enviou registros"}
+          </button>
+        </div>
+      </div>
+
+      {/* 3. Registrar direto (sem Tampermonkey) */}
       <FormOcorrenciaDireta initialCodigo={codigoOcorrencia} initialFranquia={franquiaOcorrencia} initialDescricao={descricaoOcorrencia} />
 
-      {/* 3. Legacy: Texto de cobrança + Abrir ocorrência (Tampermonkey) */}
+      {/* 4. Legacy: Texto de cobrança + Abrir ocorrência (Tampermonkey) */}
       <div className="border-t border-gray-200 pt-4 mt-4">
         <h4 className="text-sm font-semibold text-gray-700 mb-2">Texto de cobrança</h4>
         <div className="flex gap-2 items-end mb-4">
@@ -3922,23 +4155,6 @@ function FormOcorrencia() {
         </div>
       </div>
 
-      <div className="border-t border-gray-200 pt-4 mt-4">
-        <h4 className="text-sm font-semibold text-gray-700 mb-2">Textos copiar Sults</h4>
-        <div className="flex flex-wrap gap-2">
-          <button
-            onClick={() => copyText("Ocorrência registrada - Falta de retorno", "falta")}
-            className="bg-gray-100 text-gray-700 px-4 py-2 rounded-md text-sm font-medium hover:bg-gray-200 transition-colors"
-          >
-            {copied === "falta" ? "Copiado!" : "Ocorrência - Falta de retorno"}
-          </button>
-          <button
-            onClick={() => copyText("Ocorrência registrada - Não enviou os registros", "registros")}
-            className="bg-gray-100 text-gray-700 px-4 py-2 rounded-md text-sm font-medium hover:bg-gray-200 transition-colors"
-          >
-            {copied === "registros" ? "Copiado!" : "Ocorrência - Não enviou registros"}
-          </button>
-        </div>
-      </div>
     </section>
   );
 }
@@ -4024,6 +4240,7 @@ function FormSuporte() {
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState<{ success: boolean; message: string; url?: string } | null>(null);
   const [copiedSuporte, setCopiedSuporte] = useState(false);
+  const [showRelatorio, setShowRelatorio] = useState(false);
 
   const buscarFranqueado = async () => {
     if (!codigo.trim()) return;
@@ -4078,8 +4295,16 @@ function FormSuporte() {
 
   return (
     <section className="bg-white rounded-lg shadow p-6 mb-6">
-      <h3 className="text-lg font-semibold mb-1">Suporte Franquias</h3>
-      <p className="text-xs text-gray-500 mb-4">Preencha e clique &quot;Enviar&quot;. O suporte será criado em <code className="text-[11px]">suporte-ops.seazone.properties</code>.</p>
+      <div className="flex items-start justify-between mb-2 gap-2">
+        <div>
+          <h3 className="text-lg font-semibold mb-1">Suporte Franquias</h3>
+          <p className="text-xs text-gray-500">Preencha e clique &quot;Enviar&quot;. O suporte será criado em <code className="text-[11px]">suporte-ops.seazone.properties</code>.</p>
+        </div>
+        <button onClick={() => setShowRelatorio(true)} className="bg-blue-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-blue-700 transition-colors whitespace-nowrap">
+          📊 Ver meus suportes
+        </button>
+      </div>
+      {showRelatorio && <RelatorioModal tipo="suporte" onClose={() => setShowRelatorio(false)} />}
 
       <div className="space-y-4">
         <div>
