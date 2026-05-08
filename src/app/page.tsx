@@ -3554,16 +3554,105 @@ function TabOcorrenciaSuporte() {
   );
 }
 
+const ASSUNTOS_SUPORTE = ["Comunicação", "Enxoval", "Vistoria", "Insatisfação Proprietário"] as const;
+const URGENCIAS_SUPORTE = [
+  { value: "crise", label: "Crise (4h)" },
+  { value: "alta", label: "Alta (12h)" },
+  { value: "media", label: "Média (24h)" },
+  { value: "baixa", label: "Baixa (24h)" },
+] as const;
+
 function FormSuporte() {
   const [codigo, setCodigo] = useState("");
   const [franqueado, setFranqueado] = useState("");
   const [loadingFranqueado, setLoadingFranqueado] = useState(false);
   const [categoria, setCategoria] = useState(CATEGORIAS_SUPORTE[0]);
   const [setor, setSetor] = useState(SETORES_SUPORTE[0]);
+  const [assunto, setAssunto] = useState<typeof ASSUNTOS_SUPORTE[number]>("Comunicação");
+  const [urgencia, setUrgencia] = useState<string>("media");
   const [descComplemento, setDescComplemento] = useState("");
   const [sending, setSending] = useState(false);
-  const [result, setResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [result, setResult] = useState<{ success: boolean; message: string; url?: string } | null>(null);
   const [copiedSuporte, setCopiedSuporte] = useState(false);
+  const [tokenStatus, setTokenStatus] = useState<{ has_token: boolean; valid: boolean; expires_in_seconds?: number; email?: string; expires_at?: number } | null>(null);
+  const [refreshingToken, setRefreshingToken] = useState(false);
+  const [showTokenBootstrap, setShowTokenBootstrap] = useState(false);
+  const [tokenAccessInput, setTokenAccessInput] = useState("");
+  const [tokenRefreshInput, setTokenRefreshInput] = useState("");
+  const [tokenMsg, setTokenMsg] = useState<string | null>(null);
+
+  const carregarStatusToken = async () => {
+    try {
+      const r = await fetch("/api/suporte-ops/token");
+      if (r.ok) setTokenStatus(await r.json());
+    } catch { /* silencioso */ }
+  };
+
+  useEffect(() => {
+    carregarStatusToken();
+    const t = setInterval(carregarStatusToken, 30_000);
+    return () => clearInterval(t);
+  }, []);
+
+  const refreshToken = async () => {
+    setRefreshingToken(true);
+    setTokenMsg(null);
+    try {
+      const r = await fetch("/api/suporte-ops/token/refresh", { method: "POST" });
+      const d = await r.json();
+      if (r.ok) {
+        setTokenStatus(d);
+        setTokenMsg(`✅ Token atualizado — expira em ${Math.round((d.expires_in_seconds || 0) / 60)}min`);
+      } else {
+        setTokenMsg(`❌ ${d.error || "Erro ao atualizar"}`);
+      }
+    } catch (e) {
+      setTokenMsg(`❌ ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setRefreshingToken(false);
+    }
+  };
+
+  const salvarTokenInicial = async () => {
+    setTokenMsg(null);
+    const accessRaw = tokenAccessInput.trim();
+    const refreshRaw = tokenRefreshInput.trim();
+    if (!accessRaw || !refreshRaw) {
+      setTokenMsg("❌ Preencha access_token e refresh_token");
+      return;
+    }
+    // Tenta parsear como JSON inteiro se for o caso
+    let body: any = { access_token: accessRaw, refresh_token: refreshRaw };
+    if (accessRaw.startsWith("{")) {
+      try { body = JSON.parse(accessRaw); } catch { /* trata como string */ }
+    }
+    try {
+      const r = await fetch("/api/suporte-ops/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const d = await r.json();
+      if (r.ok) {
+        setTokenMsg(`✅ Token salvo (${d.email || d.user_id})`);
+        setTokenAccessInput("");
+        setTokenRefreshInput("");
+        setShowTokenBootstrap(false);
+        carregarStatusToken();
+      } else {
+        setTokenMsg(`❌ ${d.error || "Erro"}`);
+      }
+    } catch (e) {
+      setTokenMsg(`❌ ${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
+
+  const limparToken = async () => {
+    if (!confirm("Apagar token do suporte-ops?")) return;
+    await fetch("/api/suporte-ops/token", { method: "DELETE" });
+    setTokenStatus({ has_token: false, valid: false });
+    setTokenMsg("Token apagado");
+  };
 
   const descBase = "Pessoal, boa tarde. Tudo bem?\nConseguem nos ajudar com o retorno da franquia?";
 
@@ -3603,13 +3692,19 @@ function FormSuporte() {
           setor,
           descricao: descricaoCompleta,
           franqueado,
+          assunto,
+          urgencia,
         }),
       });
       const data = await res.json();
       if (data.success) {
-        setResult({ success: true, message: `Suporte criado! Card #${data.cardId}` });
+        setResult({ success: true, message: `Suporte criado em suporte-ops`, url: data.url });
         setCodigo("");
         setDescComplemento("");
+        carregarStatusToken();
+      } else if (data.needs_token_bootstrap) {
+        setResult({ success: false, message: `Sem token suporte-ops — clique "Cadastrar token" abaixo` });
+        setShowTokenBootstrap(true);
       } else {
         setResult({ success: false, message: data.error || "Erro ao criar" });
       }
@@ -3623,7 +3718,77 @@ function FormSuporte() {
   return (
     <section className="bg-white rounded-lg shadow p-6 mb-6">
       <h3 className="text-lg font-semibold mb-1">Suporte Franquias</h3>
-      <p className="text-xs text-gray-500 mb-4">Preencha e clique &quot;Enviar&quot;. O suporte será criado diretamente no Pipefy.</p>
+      <p className="text-xs text-gray-500 mb-2">Preencha e clique &quot;Enviar&quot;. O suporte será criado em <code className="text-[11px]">suporte-ops.seazone.properties</code>.</p>
+
+      {/* Painel de Token */}
+      <div className={`mb-4 rounded-md border p-3 text-xs ${tokenStatus?.valid ? "bg-green-50 border-green-200 text-green-800" : tokenStatus?.has_token ? "bg-yellow-50 border-yellow-200 text-yellow-800" : "bg-red-50 border-red-200 text-red-800"}`}>
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div>
+            {tokenStatus === null ? (
+              <span>Verificando token…</span>
+            ) : tokenStatus.valid ? (
+              <span>
+                ✅ Token <strong>{tokenStatus.email || ""}</strong> válido — expira em <strong>{Math.max(0, Math.round((tokenStatus.expires_in_seconds || 0) / 60))}min</strong>
+              </span>
+            ) : tokenStatus.has_token ? (
+              <span>⚠️ Token expirado — clique &quot;Atualizar&quot; pra refresh</span>
+            ) : (
+              <span>❌ Sem token cadastrado — clique &quot;Cadastrar token&quot;</span>
+            )}
+          </div>
+          <div className="flex gap-2">
+            {tokenStatus?.has_token && (
+              <button onClick={refreshToken} disabled={refreshingToken} className="bg-white border border-current px-2.5 py-1 rounded text-[11px] font-medium hover:bg-current hover:text-white disabled:opacity-50">
+                {refreshingToken ? "..." : "Atualizar Token"}
+              </button>
+            )}
+            <button onClick={() => setShowTokenBootstrap((v) => !v)} className="bg-white border border-current px-2.5 py-1 rounded text-[11px] font-medium hover:bg-current hover:text-white">
+              {showTokenBootstrap ? "Cancelar" : tokenStatus?.has_token ? "Resetar token" : "Cadastrar token"}
+            </button>
+            {tokenStatus?.has_token && (
+              <button onClick={limparToken} className="bg-white border border-current px-2.5 py-1 rounded text-[11px] font-medium hover:bg-red-600 hover:text-white hover:border-red-600">
+                Apagar
+              </button>
+            )}
+          </div>
+        </div>
+        {tokenMsg && <div className="mt-2 text-[11px]">{tokenMsg}</div>}
+        {showTokenBootstrap && (
+          <div className="mt-3 space-y-2">
+            <p className="text-[11px] leading-relaxed">
+              1. Acesse <a href="https://suporte-ops.seazone.properties" target="_blank" rel="noopener" className="underline">suporte-ops.seazone.properties</a> e faça login.
+              <br />2. F12 → aba <strong>Console</strong> → cole e enter:
+            </p>
+            <pre className="bg-gray-900 text-green-300 text-[10px] p-2 rounded overflow-x-auto select-all">{`copy(JSON.parse(Object.entries(localStorage).find(([k])=>k.startsWith('sb-')&&k.endsWith('-auth-token'))[1]))`}</pre>
+            <p className="text-[11px] leading-relaxed">
+              Isso copia o JSON inteiro pra clipboard. Cole no <strong>access_token</strong> abaixo (auto-detecta) — OU preenche os 2 campos manualmente:
+            </p>
+            <div>
+              <label className="text-[10px] block mb-0.5">access_token (JWT) ou JSON completo</label>
+              <textarea
+                value={tokenAccessInput}
+                onChange={(e) => setTokenAccessInput(e.target.value)}
+                placeholder="eyJhbGciOi... ou {access_token:..., refresh_token:..., expires_at:...}"
+                rows={3}
+                className="w-full border border-current rounded px-2 py-1 text-[10px] font-mono bg-white text-gray-900"
+              />
+            </div>
+            <div>
+              <label className="text-[10px] block mb-0.5">refresh_token <span className="text-[9px] opacity-70">(deixe vazio se colou JSON completo acima)</span></label>
+              <input
+                type="text"
+                value={tokenRefreshInput}
+                onChange={(e) => setTokenRefreshInput(e.target.value)}
+                placeholder="ex: 5vs7jzlyctsf"
+                className="w-full border border-current rounded px-2 py-1 text-[10px] font-mono bg-white text-gray-900"
+              />
+            </div>
+            <button onClick={salvarTokenInicial} disabled={!tokenAccessInput.trim()} className="bg-current text-white px-3 py-1.5 rounded text-[11px] font-medium disabled:opacity-50">
+              Salvar Token
+            </button>
+          </div>
+        )}
+      </div>
 
       <div className="space-y-4">
         <div>
@@ -3650,6 +3815,21 @@ function FormSuporte() {
           </select>
         </div>
 
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="text-sm font-medium text-gray-700 block mb-1">Assunto <span className="text-[10px] text-gray-400">(suporte-ops)</span></label>
+            <select value={assunto} onChange={(e) => setAssunto(e.target.value as typeof ASSUNTOS_SUPORTE[number])} className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm bg-white">
+              {ASSUNTOS_SUPORTE.map((a) => <option key={a} value={a}>{a}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-sm font-medium text-gray-700 block mb-1">Urgência</label>
+            <select value={urgencia} onChange={(e) => setUrgencia(e.target.value)} className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm bg-white">
+              {URGENCIAS_SUPORTE.map((u) => <option key={u.value} value={u.value}>{u.label}</option>)}
+            </select>
+          </div>
+        </div>
+
         <div>
           <label className="text-sm font-medium text-gray-700 block mb-1">Descrição do Problema</label>
           <div className="bg-gray-50 border border-gray-200 rounded-md p-3 mb-2">
@@ -3672,11 +3852,16 @@ function FormSuporte() {
 
         {result && (
           <div className={`p-3 rounded-md text-sm ${result.success ? "bg-green-50 text-green-700 border border-green-200" : "bg-red-50 text-red-700 border border-red-200"}`}>
-            {result.message}
+            <div>{result.message}</div>
+            {result.url && (
+              <a href={result.url} target="_blank" rel="noopener" className="text-xs underline mt-1 inline-block break-all">
+                {result.url}
+              </a>
+            )}
           </div>
         )}
 
-        <WithHelp help="Cria card de Suporte Franquias diretamente no Pipefy com os dados preenchidos" className="relative w-full">
+        <WithHelp help="Cria card de Suporte Franquias no suporte-ops.seazone.properties com os dados preenchidos" className="relative w-full">
           <button onClick={handleEnviar} disabled={sending || !codigo.trim()} className="w-full bg-blue-600 text-white py-3 rounded-md font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors">
             {sending ? "Enviando..." : "Enviar Suporte"}
           </button>
