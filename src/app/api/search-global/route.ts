@@ -1,7 +1,9 @@
+import { errorResponse } from "@/lib/errors";
 import { NextRequest, NextResponse } from "next/server";
 import { pipefyQuery, requireAuth, toBrazilDate, PHASE_3_ID, PHASE_4_ID, PHASE_5_ID } from "@/lib/pipefy";
+import { PIPEFY_PHASE } from "@/lib/config";
 
-const CONCLUDED_PHASE_ID = "323315793";
+const CONCLUDED_PHASE_ID = PIPEFY_PHASE.CONCLUDED;
 
 const SEARCH_PHASES = [
   { id: PHASE_3_ID, name: "Fase 3" },
@@ -56,6 +58,6 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ success: true, cards });
   } catch (err: unknown) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });
+    return errorResponse(err);
   }
 }

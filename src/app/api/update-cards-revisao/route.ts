@@ -1,12 +1,14 @@
+import { errorResponse } from "@/lib/errors";
 import { NextRequest, NextResponse } from "next/server";
 import {
   pipefyQuery, fetchAllCardsFromPhase, searchCardInPhase, updateDueDate, updateAssignee, createComment,
   validateCardId, toBrazilDate, formatDateBR, isDueToday, getNextBusinessDayAt22,
   replaceCommentFupDate, requireAuth, PHASE_3_ID, PHASE_4_ID, WESLLEY_USER_ID,
 } from "@/lib/pipefy";
+import { SLACK, PIPEFY_TAG } from "@/lib/config";
 
 const SLACK_USER_TOKEN = process.env.SLACK_USER_TOKEN || "";
-const BRUNO_ID = "U05AKADK9EY";
+const BRUNO_ID = SLACK.USER_BRUNO;
 
 async function sendSlackDM(userId: string, text: string) {
   // Abrir conversa DM
@@ -29,8 +31,8 @@ async function sendSlackDM(userId: string, text: string) {
 }
 
 const TAG_ADEQUACAO_COMPLEXA = "314328534";
-const TAG_ITENS_PEQUENOS = "310938809";
-const TAG_MANUTENCOES_PEQUENAS = "310938821";
+const TAG_ITENS_PEQUENOS = PIPEFY_TAG.ITENS_PEQUENOS;
+const TAG_MANUTENCOES_PEQUENAS = PIPEFY_TAG.MANUT_PEQUENAS;
 const TAG_PIN = "312148103";
 
 function normalize(str: string): string {
@@ -98,7 +100,7 @@ export async function GET(req: NextRequest) {
       cards: result,
     });
   } catch (err: unknown) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });
+    return errorResponse(err);
   }
 }
 
@@ -308,6 +310,6 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ error: "Tipo inválido" }, { status: 400 });
   } catch (err: unknown) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });
+    return errorResponse(err);
   }
 }

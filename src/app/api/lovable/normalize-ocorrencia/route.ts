@@ -5,6 +5,7 @@ import {
   LOVABLE_SUPA_URL,
   getValidLovableAccessTokenAndUpdate,
 } from "@/lib/lovable-auth";
+import { errorMessage } from "@/lib/errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -34,9 +35,10 @@ export async function POST(req: NextRequest) {
   let token: string;
   try {
     token = await getValidLovableAccessTokenAndUpdate(req, cookieHolder);
-  } catch (e) {
+  } catch (e: unknown) {
+    console.error("[normalize-ocorrencia] token refresh:", errorMessage(e));
     return NextResponse.json(
-      { error: e instanceof Error ? e.message : String(e), needs_token_bootstrap: true },
+      { error: "Sessao Lovable expirada", needs_token_bootstrap: true },
       { status: 401 }
     );
   }

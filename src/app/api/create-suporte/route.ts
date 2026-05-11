@@ -1,3 +1,4 @@
+import { errorResponse } from "@/lib/errors";
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/pipefy";
 import {
@@ -113,9 +114,6 @@ export async function POST(req: NextRequest) {
       url: `https://suporte-ops.seazone.properties/kanban?card=${card.id}`,
     });
   } catch (err: unknown) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : String(err) },
-      { status: 500 }
-    );
+    return errorResponse(err, { status: 500 });
   }
 }

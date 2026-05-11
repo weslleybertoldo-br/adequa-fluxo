@@ -1,3 +1,4 @@
+import { errorResponse } from "@/lib/errors";
 import { NextRequest, NextResponse } from "next/server";
 import { pipefyQuery, requireAuth } from "@/lib/pipefy";
 
@@ -52,6 +53,6 @@ export async function POST(req: NextRequest) {
       url: card.url,
     });
   } catch (err: unknown) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });
+    return errorResponse(err);
   }
 }

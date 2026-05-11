@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, pipefyQuery, findCardsByTitleInPipe } from "@/lib/pipefy";
 import { trocarCodigoStays, previewTrocaStays } from "@/lib/stays";
+import { errorResponse } from "@/lib/errors";
 
 const PIPE_1_ID = "303781436";
 const FIELD_STAYS_ID = "id_da_stays_do_im_vel";
@@ -127,11 +128,7 @@ export async function POST(request: NextRequest) {
       titulosCount,
       mensagem,
     });
-  } catch (error: any) {
-    console.error("Erro em stays-trocar:", error);
-    return NextResponse.json(
-      { error: error.message || "Erro ao trocar na Stays" },
-      { status: 500 }
-    );
+  } catch (error: unknown) {
+    return errorResponse(error, { context: "stays-trocar", fallback: "Erro ao trocar na Stays" });
   }
 }

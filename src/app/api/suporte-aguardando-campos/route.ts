@@ -1,3 +1,4 @@
+import { errorResponse } from "@/lib/errors";
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/pipefy";
 import { getSuporteCard, updateSuporteCard } from "@/lib/suporte-ops";
@@ -69,10 +70,6 @@ export async function POST(request: NextRequest) {
       cardAtualizado: { id: updated?.id, status: updated?.status },
     });
   } catch (error: any) {
-    console.error("Erro em suporte-aguardando-campos:", error);
-    return NextResponse.json(
-      { error: error.message || "Erro ao salvar campos" },
-      { status: 500 }
-    );
+    return errorResponse(error, { fallback: "Erro ao salvar campos", status: 500 });
   }
 }

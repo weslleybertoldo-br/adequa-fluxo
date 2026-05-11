@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/pipefy";
+import { errorResponse } from "@/lib/errors";
 
 // Bot token nao esta no canal #suporte-operação (`not_in_channel`).
 // User token (xoxp) consegue ler como o usuario logado.
@@ -274,10 +275,7 @@ export async function GET(request: NextRequest) {
       repliesAfterAguardando,
       allMessages: msgs,
     });
-  } catch (err: any) {
-    return NextResponse.json(
-      { error: err?.message || String(err) },
-      { status: 500 }
-    );
+  } catch (err: unknown) {
+    return errorResponse(err, { context: "slack-thread-troca" });
   }
 }

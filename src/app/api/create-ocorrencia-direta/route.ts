@@ -1,3 +1,4 @@
+import { errorResponse, errorMessage } from "@/lib/errors";
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/pipefy";
 import {
@@ -56,12 +57,10 @@ export async function POST(req: NextRequest) {
   let userToken: string;
   try {
     userToken = await getValidLovableAccessTokenAndUpdate(req, cookieHolder);
-  } catch (e) {
+  } catch (e: unknown) {
+    console.error("[create-ocorrencia-direta] token refresh:", errorMessage(e));
     return NextResponse.json(
-      {
-        error: e instanceof Error ? e.message : String(e),
-        needs_token_bootstrap: true,
-      },
+      { error: "Sessao Lovable expirada", needs_token_bootstrap: true },
       { status: 401 }
     );
   }
@@ -206,9 +205,6 @@ export async function POST(req: NextRequest) {
     if (refreshedCookie) finalRes.headers.set("set-cookie", refreshedCookie);
     return finalRes;
   } catch (e) {
-    return NextResponse.json(
-      { error: e instanceof Error ? e.message : String(e) },
-      { status: 500 }
-    );
+    return errorResponse(e, { status: 500 });
   }
 }

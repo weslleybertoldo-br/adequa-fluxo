@@ -1,3 +1,4 @@
+import { errorResponse } from "@/lib/errors";
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/pipefy";
 import { google } from "googleapis";
@@ -113,10 +114,6 @@ export async function GET(request: NextRequest) {
       mensagem,
     });
   } catch (error: any) {
-    console.error("Erro ao validar planilha:", error);
-    return NextResponse.json(
-      { error: error.message || "Erro ao validar planilha" },
-      { status: 500 }
-    );
+    return errorResponse(error, { fallback: "Erro ao validar planilha", status: 500 });
   }
 }

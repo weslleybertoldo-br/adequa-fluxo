@@ -1,3 +1,4 @@
+import { errorResponse } from "@/lib/errors";
 import { NextRequest, NextResponse } from "next/server";
 import { pipefyQuery, createComment, validateCardId, requireAuth, toBrazilDate, PHASE_3_ID, PHASE_4_ID, PHASE_5_ID } from "@/lib/pipefy";
 
@@ -98,6 +99,6 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ success: true, cardId, details: actions.join(" | ") });
   } catch (err: unknown) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });
+    return errorResponse(err);
   }
 }

@@ -1,19 +1,21 @@
+import { errorResponse } from "@/lib/errors";
 import { NextRequest, NextResponse } from "next/server";
 import {
   pipefyQuery, fetchAllCardsFromPhase, validateCardId,
   createComment, updateDueDate, getNextBusinessDayAt22,
   formatDateBR, toBrazilDate, requireAuth, PHASE_4_ID, PHASE_5_ID,
 } from "@/lib/pipefy";
+import { PIPEFY_TAG } from "@/lib/config";
 
 const PIPE_1_PHASE_10 = "326702699";
 const IMOVEL_ATIVO_TAG = "314317045";
 
 // Tags de enxoval/itens/manutenção
-const TAG_COMPRAR_ENXOVAL = "310425316";
-const TAG_ENTREGAR_ENXOVAL = "310938829";
-const TAG_VALIDAR_ENXOVAL = "310959732";
-const TAG_ITENS_PEQUENOS = "310938809";
-const TAG_MANUT_PEQUENAS = "310938821";
+const TAG_COMPRAR_ENXOVAL = PIPEFY_TAG.COMPRAR_ENXOVAL;
+const TAG_ENTREGAR_ENXOVAL = PIPEFY_TAG.ENTREGAR_ENXOVAL;
+const TAG_VALIDAR_ENXOVAL = PIPEFY_TAG.VALIDAR_ENXOVAL;
+const TAG_ITENS_PEQUENOS = PIPEFY_TAG.ITENS_PEQUENOS;
+const TAG_MANUT_PEQUENAS = PIPEFY_TAG.MANUT_PEQUENAS;
 
 // GET: Lista cards da Fase 4 que tambem existem na Fase 10 do Pipe 1
 export async function GET(req: NextRequest) {
@@ -61,7 +63,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ success: true, totalCards: cards.length, cards });
   } catch (err: unknown) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });
+    return errorResponse(err);
   }
 }
 
@@ -343,6 +345,6 @@ export async function POST(req: NextRequest) {
       details: allDetails,
     });
   } catch (err: unknown) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });
+    return errorResponse(err);
   }
 }

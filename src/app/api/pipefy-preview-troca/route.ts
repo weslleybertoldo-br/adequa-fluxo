@@ -1,3 +1,4 @@
+import { errorResponse } from "@/lib/errors";
 import { NextRequest, NextResponse } from "next/server";
 import {
   requireAuth,
@@ -283,10 +284,6 @@ export async function GET(request: NextRequest) {
       staysCheckErro,
     });
   } catch (error: any) {
-    console.error("Erro em pipefy-preview-troca:", error);
-    return NextResponse.json(
-      { error: error.message || "Erro ao consultar Pipefy" },
-      { status: 500 }
-    );
+    return errorResponse(error, { fallback: "Erro ao consultar Pipefy", status: 500 });
   }
 }

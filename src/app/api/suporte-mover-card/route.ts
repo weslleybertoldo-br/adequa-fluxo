@@ -1,3 +1,4 @@
+import { errorResponse } from "@/lib/errors";
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/pipefy";
 import {
@@ -211,10 +212,6 @@ export async function POST(request: NextRequest) {
       cardAtualizado: { id: updated?.id, status: updated?.status },
     });
   } catch (error: any) {
-    console.error("Erro em suporte-mover-card:", error);
-    return NextResponse.json(
-      { error: error.message || "Erro ao mover card" },
-      { status: 500 }
-    );
+    return errorResponse(error, { fallback: "Erro ao mover card", status: 500 });
   }
 }

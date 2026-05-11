@@ -1,3 +1,4 @@
+import { errorResponse } from "@/lib/errors";
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/pipefy";
 import { refreshTokenAndUpdate, setTokenCookie } from "@/lib/suporte-ops-auth";
@@ -26,9 +27,6 @@ export async function POST(req: NextRequest) {
     setTokenCookie(res, next);
     return res;
   } catch (e) {
-    return NextResponse.json(
-      { error: e instanceof Error ? e.message : String(e) },
-      { status: 500 }
-    );
+    return errorResponse(e, { status: 500 });
   }
 }

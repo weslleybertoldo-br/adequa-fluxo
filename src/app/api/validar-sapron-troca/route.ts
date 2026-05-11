@@ -1,3 +1,4 @@
+import { errorResponse } from "@/lib/errors";
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/pipefy";
 
@@ -78,10 +79,6 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error: any) {
-    console.error("Erro ao verificar Sapron:", error);
-    return NextResponse.json(
-      { error: error.message || "Erro ao verificar Sapron" },
-      { status: 500 }
-    );
+    return errorResponse(error, { fallback: "Erro ao verificar Sapron", status: 500 });
   }
 }

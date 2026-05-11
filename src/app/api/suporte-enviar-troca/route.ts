@@ -1,3 +1,4 @@
+import { errorResponse, errorMessage } from "@/lib/errors";
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/pipefy";
 import {
@@ -85,11 +86,10 @@ export async function POST(request: NextRequest) {
         "app"
       );
       comentarioId = comentario?.id;
-    } catch (err: any) {
+    } catch (err: unknown) {
+      console.error("[suporte-enviar-troca] inserir comentario:", errorMessage(err));
       return NextResponse.json(
-        {
-          error: `Falha ao inserir comentário: ${err?.message || err}`,
-        },
+        { error: "Falha ao inserir comentário" },
         { status: 502 }
       );
     }
@@ -120,10 +120,6 @@ export async function POST(request: NextRequest) {
           : `Comentário enviado mas Slack falhou: ${slackErro}`,
     });
   } catch (error: any) {
-    console.error("Erro em suporte-enviar-troca:", error);
-    return NextResponse.json(
-      { error: error.message || "Erro ao enviar" },
-      { status: 500 }
-    );
+    return errorResponse(error, { fallback: "Erro ao enviar", status: 500 });
   }
 }

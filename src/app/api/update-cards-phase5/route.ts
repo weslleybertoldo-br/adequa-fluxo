@@ -1,3 +1,4 @@
+import { errorResponse } from "@/lib/errors";
 import { NextRequest, NextResponse } from "next/server";
 import {
   pipefyQuery, searchCardInPhase, updateDueDate, createComment,
@@ -220,7 +221,7 @@ export async function GET(req: NextRequest) {
       cards: formatted.map((c) => ({ ...c, owner: owners[c.id] || { nome: "", telefone: "", email: "" } })),
     });
   } catch (err: unknown) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });
+    return errorResponse(err);
   }
 }
 
@@ -274,6 +275,6 @@ export async function POST(req: NextRequest) {
       newDueDate: newDueDateBR,
     });
   } catch (err: unknown) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });
+    return errorResponse(err);
   }
 }

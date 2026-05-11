@@ -1,3 +1,4 @@
+import { errorResponse } from "@/lib/errors";
 import { NextRequest, NextResponse } from "next/server";
 import { fetchAllCardsFromPhase, toBrazilDate, requireAuth, PHASE_3_ID } from "@/lib/pipefy";
 
@@ -40,6 +41,6 @@ export async function GET(req: NextRequest) {
       }),
     });
   } catch (err: unknown) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });
+    return errorResponse(err);
   }
 }

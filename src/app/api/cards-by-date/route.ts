@@ -1,3 +1,4 @@
+import { errorResponse } from "@/lib/errors";
 import { NextRequest, NextResponse } from "next/server";
 import {
   pipefyQuery, fetchAllCardsFromPhase, updateDueDate, validateCardId,
@@ -88,7 +89,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ success: true, totalCards: allCards.length, cards: allCards });
   } catch (err: unknown) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });
+    return errorResponse(err);
   }
 }
 
@@ -112,6 +113,6 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ success: true, details: `Vencimento → ${formatted} 22:00` });
   } catch (err: unknown) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });
+    return errorResponse(err);
   }
 }

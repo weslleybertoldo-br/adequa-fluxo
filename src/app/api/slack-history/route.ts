@@ -1,8 +1,10 @@
+import { errorResponse } from "@/lib/errors";
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/pipefy";
+import { SLACK } from "@/lib/config";
 
 const SLACK_TOKEN = process.env.SLACK_BOT_TOKEN || "";
-const SLACK_CHANNEL_ID = "C09CQRNEVLZ";
+const SLACK_CHANNEL_ID = SLACK.CHANNEL_ENXOVAL;
 
 // GET: Listar mensagens recentes do canal
 export async function GET(req: NextRequest) {
@@ -27,7 +29,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ success: true, messages });
   } catch (err: unknown) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });
+    return errorResponse(err);
   }
 }
 
@@ -50,6 +52,6 @@ export async function DELETE(req: NextRequest) {
 
     return NextResponse.json({ success: true });
   } catch (err: unknown) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });
+    return errorResponse(err);
   }
 }

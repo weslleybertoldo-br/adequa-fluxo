@@ -1,10 +1,12 @@
+import { errorResponse } from "@/lib/errors";
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/pipefy";
+import { SLACK } from "@/lib/config";
 
 const SLACK_TOKEN = process.env.SLACK_BOT_TOKEN || "";
-const CHANNEL_ID = "C09CQRNEVLZ"; // despesas-implantação
-const BRUNO_ID = "U05AKADK9EY";
-const WESLLEY_ID = "U08DF2E4RLP";
+const CHANNEL_ID = SLACK.CHANNEL_ENXOVAL; // despesas-implantação
+const BRUNO_ID = SLACK.USER_BRUNO;
+const WESLLEY_ID = SLACK.USER_WESLLEY;
 
 export async function POST(req: NextRequest) {
   if (!requireAuth(req.cookies.get("auth_token")?.value)) {
@@ -69,6 +71,6 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ success: true, message: "Mensagem enviada no canal despesas-implantação" });
   } catch (err: unknown) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });
+    return errorResponse(err);
   }
 }

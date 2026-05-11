@@ -1,3 +1,4 @@
+import { errorResponse } from "@/lib/errors";
 import { NextRequest, NextResponse } from "next/server";
 import {
   pipefyQuery,
@@ -246,10 +247,6 @@ export async function POST(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error("generate-enxoval error:", error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : String(error) },
-      { status: 500 }
-    );
+    return errorResponse(error, { status: 500 });
   }
 }

@@ -1,3 +1,4 @@
+import { errorResponse } from "@/lib/errors";
 import { NextRequest, NextResponse } from "next/server";
 import { pipefyQuery, fetchAllCardsFromPhase, createComment, validateCardId, requireAuth, PHASE_5_ID } from "@/lib/pipefy";
 
@@ -133,7 +134,7 @@ export async function GET(req: NextRequest) {
       cards: results,
     });
   } catch (err: unknown) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });
+    return errorResponse(err);
   }
 }
 
@@ -181,6 +182,6 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ success: true, cardId, details: actions.join(" | ") });
   } catch (err: unknown) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });
+    return errorResponse(err);
   }
 }

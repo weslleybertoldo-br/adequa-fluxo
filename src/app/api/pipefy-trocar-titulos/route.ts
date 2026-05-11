@@ -1,3 +1,4 @@
+import { errorResponse } from "@/lib/errors";
 import { NextRequest, NextResponse } from "next/server";
 import {
   requireAuth,
@@ -298,10 +299,6 @@ export async function POST(request: NextRequest) {
           : `${sucessos} ok / ${erros} com erro — ver detalhes.`,
     });
   } catch (error: any) {
-    console.error("Erro em pipefy-trocar-titulos:", error);
-    return NextResponse.json(
-      { error: error.message || "Erro ao trocar títulos" },
-      { status: 500 }
-    );
+    return errorResponse(error, { fallback: "Erro ao trocar títulos", status: 500 });
   }
 }

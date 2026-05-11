@@ -1,3 +1,4 @@
+import { errorResponse } from "@/lib/errors";
 import { NextRequest, NextResponse } from "next/server";
 import {
   pipefyQuery, validateCardId, updateDueDate, updateAssignee, createComment,
@@ -84,7 +85,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ success: true, cards: unique });
   } catch (err: unknown) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });
+    return errorResponse(err);
   }
 }
 
@@ -161,6 +162,6 @@ export async function POST(req: NextRequest) {
     const hasError = results.some((r) => r.status === "error");
     return NextResponse.json({ success: !hasError, results });
   } catch (err: unknown) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });
+    return errorResponse(err);
   }
 }

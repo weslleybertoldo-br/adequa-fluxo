@@ -1,3 +1,4 @@
+import { errorResponse } from "@/lib/errors";
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/pipefy";
 import {
@@ -102,10 +103,6 @@ export async function GET(request: NextRequest) {
       cardsByPhase,
     });
   } catch (error: any) {
-    console.error("Erro ao buscar suportes Troca de Código:", error);
-    return NextResponse.json(
-      { error: error.message || "Erro ao buscar suportes" },
-      { status: 500 }
-    );
+    return errorResponse(error, { fallback: "Erro ao buscar suportes", status: 500 });
   }
 }

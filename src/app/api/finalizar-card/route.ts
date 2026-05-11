@@ -1,57 +1,53 @@
+import { errorResponse } from "@/lib/errors";
 import { NextRequest, NextResponse } from "next/server";
 import { pipefyQuery, validateCardId, createComment, updateDueDate, getNextBusinessDayAt22, formatDateBR, toBrazilDate, requireAuth, PHASE_5_ID, PIPE_1_PHASES } from "@/lib/pipefy";
+import { SLACK, PIPEFY_PHASE, PIPEFY_TAG } from "@/lib/config";
+import { getSectionStatus } from "@/lib/comment-parser";
 
 
 async function buscarFranquiaPipe1(code: string): Promise<string | null> {
-  for (const { id: phaseId } of PIPE_1_PHASES) {
-    const result = await pipefyQuery(`{
-      phase(id: ${phaseId}) {
-        cards(first: 3, search: { title: "${JSON.stringify(code).slice(1, -1)}" }) {
-          edges {
-            node {
-              title
-              fields { name value }
-            }
+  // Busca em todas as 12 fases em paralelo (-50% latencia vs loop serial).
+  // Retorna a 1a franquia encontrada (ordem das fases preserva preferencia).
+  const safeCode = JSON.stringify(code).slice(1, -1);
+  const upperCode = code.toUpperCase();
+  const results = await Promise.all(
+    PIPE_1_PHASES.map(({ id: phaseId }) =>
+      pipefyQuery(`{
+        phase(id: ${phaseId}) {
+          cards(first: 3, search: { title: "${safeCode}" }) {
+            edges { node { title fields { name value } } }
           }
         }
-      }
-    }`);
+      }`)
+    )
+  );
+  for (const result of results) {
     const edges = result?.data?.phase?.cards?.edges || [];
-    const card = edges.find((e: any) => e.node.title.toUpperCase() === code.toUpperCase());
+    const card = edges.find((e: any) => e.node.title.toUpperCase() === upperCode);
     if (card) {
-      const field = (card.node.fields || []).find((f: any) => f.name?.toLowerCase() === "anfitrião escolhido");
+      const field = (card.node.fields || []).find(
+        (f: any) => f.name?.toLowerCase() === "anfitrião escolhido"
+      );
       if (field?.value) return field.value;
     }
   }
   return null;
 }
 
-const CONCLUDED_PHASE_ID = "323315793";
+const CONCLUDED_PHASE_ID = PIPEFY_PHASE.CONCLUDED;
 const SLACK_TOKEN = process.env.SLACK_BOT_TOKEN || "";
-const SLACK_CHANNEL_ID = "C09CQRNEVLZ";
-const BRUNO_SLACK_ID = "U05AKADK9EY";
-const WESLLEY_SLACK_ID = "U08DF2E4RLP";
+const SLACK_CHANNEL_ID = SLACK.CHANNEL_ENXOVAL;
+const BRUNO_SLACK_ID = SLACK.USER_BRUNO;
+const WESLLEY_SLACK_ID = SLACK.USER_WESLLEY;
 
 // Tags de enxoval/itens/manutenção
-const TAG_COMPRAR_ENXOVAL = "310425316";
-const TAG_ENTREGAR_ENXOVAL = "310938829";
-const TAG_VALIDAR_ENXOVAL = "310959732";
-const TAG_ITENS_PEQUENOS = "310938809";
-const TAG_ITENS_GRANDES = "310425321";
-const TAG_MANUT_PEQUENAS = "310938821";
-const TAG_MANUT_GRANDES = "310425328";
-
-// Detecta status de uma seção no comentário (❌ ou ✔️)
-function getSectionStatus(text: string, keyword: string): "❌" | "✔️" | "" {
-  const lines = text.split("\n");
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (trimmed.match(new RegExp(`^[❌✔✅]`, "i")) && trimmed.toUpperCase().includes(keyword.toUpperCase())) {
-      return trimmed.startsWith("❌") ? "❌" : "✔️";
-    }
-  }
-  return "";
-}
+const TAG_COMPRAR_ENXOVAL = PIPEFY_TAG.COMPRAR_ENXOVAL;
+const TAG_ENTREGAR_ENXOVAL = PIPEFY_TAG.ENTREGAR_ENXOVAL;
+const TAG_VALIDAR_ENXOVAL = PIPEFY_TAG.VALIDAR_ENXOVAL;
+const TAG_ITENS_PEQUENOS = PIPEFY_TAG.ITENS_PEQUENOS;
+const TAG_ITENS_GRANDES = PIPEFY_TAG.ITENS_GRANDES;
+const TAG_MANUT_PEQUENAS = PIPEFY_TAG.MANUT_PEQUENAS;
+const TAG_MANUT_GRANDES = PIPEFY_TAG.MANUT_GRANDES;
 
 // Extrair status do enxoval do comentário
 function getEnxovalFromComment(text: string): string {
@@ -394,6 +390,6 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ error: "Ação inválida" }, { status: 400 });
   } catch (err: unknown) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });
+    return errorResponse(err);
   }
 }

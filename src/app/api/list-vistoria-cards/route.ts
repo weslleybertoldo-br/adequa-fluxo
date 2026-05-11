@@ -1,3 +1,4 @@
+import { errorResponse } from "@/lib/errors";
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/pipefy";
 import { listVistoriaCards } from "@/lib/enxoval/derive";
@@ -14,9 +15,6 @@ export async function POST(request: NextRequest) {
     const cards = await listVistoriaCards(code);
     return NextResponse.json({ success: true, code, cards });
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : String(error) },
-      { status: 500 }
-    );
+    return errorResponse(error, { status: 500 });
   }
 }

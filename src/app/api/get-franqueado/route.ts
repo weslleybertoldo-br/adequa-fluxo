@@ -1,3 +1,4 @@
+import { errorResponse } from "@/lib/errors";
 import { NextRequest, NextResponse } from "next/server";
 import { pipefyQuery, requireAuth, PIPE_1_PHASES } from "@/lib/pipefy";
 
@@ -43,6 +44,6 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ success: true, franqueado: "" });
   } catch (err: unknown) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });
+    return errorResponse(err);
   }
 }

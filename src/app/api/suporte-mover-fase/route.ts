@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/pipefy";
 import { updateSuporteCard } from "@/lib/suporte-ops";
+import { errorResponse } from "@/lib/errors";
 
 const STATUSES = ["novo", "em_andamento", "aguardando", "concluido", "arquivado"] as const;
 type Status = (typeof STATUSES)[number];
@@ -30,8 +31,7 @@ export async function POST(request: NextRequest) {
       novoStatus,
       cardAtualizado: { id: updated?.id, status: updated?.status },
     });
-  } catch (err: any) {
-    console.error("Erro em suporte-mover-fase:", err);
-    return NextResponse.json({ error: err?.message || "Erro" }, { status: 500 });
+  } catch (err: unknown) {
+    return errorResponse(err, { context: "suporte-mover-fase" });
   }
 }

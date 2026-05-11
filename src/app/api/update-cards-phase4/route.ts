@@ -1,24 +1,16 @@
+import { errorResponse } from "@/lib/errors";
 import { NextRequest, NextResponse } from "next/server";
 import {
   pipefyQuery, fetchAllCardsFromPhase, searchCardInPhase, updateDueDate, updateAssignee, createComment,
   validateCardId, toBrazilDate, formatDateBR, isDueToday, getNextBusinessDayAt22,
   replaceCommentFupDate, requireAuth, fetchPipe1PhaseMap, PHASE_4_ID, WESLLEY_USER_ID,
 } from "@/lib/pipefy";
+import { PIPEFY_TAG } from "@/lib/config";
+import { getSectionStatus } from "@/lib/comment-parser";
 
-const TAG_ITENS_PEQUENOS = "310938809";
-const TAG_MANUT_PEQUENAS = "310938821";
+const TAG_ITENS_PEQUENOS = PIPEFY_TAG.ITENS_PEQUENOS;
+const TAG_MANUT_PEQUENAS = PIPEFY_TAG.MANUT_PEQUENAS;
 const TAG_PIN = "312148103";
-
-function getSectionStatus(text: string, keyword: string): "❌" | "✔️" | "" {
-  const lines = text.split("\n");
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (/^[❌✔✅]/.test(trimmed) && trimmed.toUpperCase().includes(keyword.toUpperCase())) {
-      return trimmed.startsWith("❌") ? "❌" : "✔️";
-    }
-  }
-  return "";
-}
 
 function shouldSkipCard(card: any): { skip: boolean; reason: string } {
   const assignees = card.assignees || [];
@@ -195,7 +187,7 @@ export async function GET(req: NextRequest) {
         }),
     });
   } catch (err: unknown) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });
+    return errorResponse(err);
   }
 }
 
@@ -222,6 +214,6 @@ export async function POST(req: NextRequest) {
     const processResult = await processCard(card, extraDays, customComment);
     return NextResponse.json({ success: true, ...processResult });
   } catch (err: unknown) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });
+    return errorResponse(err);
   }
 }

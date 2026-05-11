@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { pipefyQuery, requireAuth, PIPE_ID, PHASE_5_ID, sanitizeGraphQL } from "@/lib/pipefy";
+import { errorResponse } from "@/lib/errors";
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const pdf = require("@/lib/pdf-parse");
@@ -346,11 +347,7 @@ export async function POST(request: NextRequest) {
       data: parsed,
       pdfFile: fileName,
     });
-  } catch (error) {
-    console.error("Erro ao processar card:", error);
-    return NextResponse.json(
-      { error: String(error instanceof Error ? error.message : error) },
-      { status: 500 }
-    );
+  } catch (error: unknown) {
+    return errorResponse(error, { context: "process-card" });
   }
 }
