@@ -37,6 +37,37 @@ export async function POST(req: NextRequest) {
     setLovableTokenCookie(res, t);
     return res;
   } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (/refresh_token ausente/i.test(msg)) {
+      return NextResponse.json(
+        { error: "refresh_token ausente — cole no segundo campo (basta ele)" },
+        { status: 400 }
+      );
+    }
+    if (/already.?used|Already Used/i.test(msg)) {
+      return NextResponse.json(
+        { error: "refresh_token já consumido — abra o Lovable, copie o atual e cole novamente (feche o Lovable depois pra evitar revogação por reuso)" },
+        { status: 400 }
+      );
+    }
+    if (/Invalid Refresh Token|refresh_token.*not valid|validation_failed/i.test(msg)) {
+      return NextResponse.json(
+        { error: "refresh_token inválido ou revogado — copie o atual do Lovable (F12 → snippet)" },
+        { status: 400 }
+      );
+    }
+    if (/access_token nao parece JWT|JWT mal formado|user_id.*ausente|expires_at invalido/i.test(msg)) {
+      return NextResponse.json(
+        { error: `access_token inválido: ${msg}` },
+        { status: 400 }
+      );
+    }
+    if (/Refresh lovable falhou/i.test(msg)) {
+      return NextResponse.json(
+        { error: `Supabase rejeitou o refresh_token: ${msg.replace(/^Refresh lovable falhou /, '')}` },
+        { status: 400 }
+      );
+    }
     return errorResponse(e, { status: 400 });
   }
 }

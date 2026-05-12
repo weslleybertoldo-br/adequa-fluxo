@@ -37,9 +37,15 @@ export async function POST(req: NextRequest) {
         { status: 401 }
       );
     }
-    if (/Refresh lovable falhou/i.test(msg)) {
+    if (/already.?used|Already Used/i.test(msg)) {
       return NextResponse.json(
-        { error: "refresh_token expirado — clique Resetar e cadastre token novo" },
+        { error: "refresh_token revogado (família invalidada por reuso — provavelmente Lovable aberto em paralelo). Clique Resetar, feche o Lovable e cole o refresh novo." },
+        { status: 401 }
+      );
+    }
+    if (/Refresh lovable falhou|Invalid Refresh Token|refresh_token.*not valid|validation_failed/i.test(msg)) {
+      return NextResponse.json(
+        { error: "refresh_token expirado/inválido — clique Resetar e cadastre o refresh atual do Lovable" },
         { status: 401 }
       );
     }
