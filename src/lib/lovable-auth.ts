@@ -124,7 +124,10 @@ export async function buildInitialLovableToken(payload: any): Promise<LovableTok
 
   if (typeof payload === "string") {
     const lines = payload.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
-    if (lines.length >= 2) {
+    if (lines.length === 1) {
+      // Uma linha: tratar como refresh_token (access vem do Supabase)
+      refresh_token = lines[0];
+    } else if (lines.length >= 2) {
       access_token = lines[0];
       refresh_token = lines[1];
     }
@@ -138,8 +141,13 @@ export async function buildInitialLovableToken(payload: any): Promise<LovableTok
     full_name = user?.user_metadata?.full_name || user?.user_metadata?.name || payload.full_name;
   }
 
-  if (!access_token) throw new Error("access_token ausente — paste o JWT");
   if (!refresh_token) throw new Error("refresh_token ausente");
+
+  // Se nao tem access_token, busca via refresh no Supabase
+  if (!access_token) {
+    const refreshed = await callSupabaseRefresh(refresh_token);
+    return refreshed;
+  }
 
   if (!expires_at || !user_id || !email || !full_name) {
     try {

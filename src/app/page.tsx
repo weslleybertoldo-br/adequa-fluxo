@@ -3207,7 +3207,7 @@ function FormOcorrenciaDireta({
   initialFranquia: string;
   initialDescricao: string;
 }) {
-  const [open, setOpen] = useState(false);
+  const open = true;
 
   // Token state (necessario pro INSERT em ocorrencias + upload da evidencia)
   const [tokenStatus, setTokenStatus] = useState<{ has_token: boolean; valid: boolean; expires_in_seconds?: number; email?: string; full_name?: string } | null>(null);
@@ -3331,13 +3331,20 @@ function FormOcorrenciaDireta({
     setTokenMsg(null);
     const accessRaw = tokenAccessInput.trim();
     const refreshRaw = tokenRefreshInput.trim();
-    if (!accessRaw || !refreshRaw) {
-      setTokenMsg("❌ Preencha access_token e refresh_token");
+    if (!accessRaw && !refreshRaw) {
+      setTokenMsg("❌ Cole pelo menos o refresh_token");
       return;
     }
-    let body: any = { access_token: accessRaw, refresh_token: refreshRaw };
+    let body: any;
     if (accessRaw.startsWith("{")) {
-      try { body = JSON.parse(accessRaw); } catch { /* string */ }
+      try { body = JSON.parse(accessRaw); } catch { body = { access_token: accessRaw, refresh_token: refreshRaw }; }
+    } else if (accessRaw && refreshRaw) {
+      body = { access_token: accessRaw, refresh_token: refreshRaw };
+    } else if (refreshRaw) {
+      body = { refresh_token: refreshRaw };
+    } else {
+      // so access sem refresh: trata como refresh
+      body = { refresh_token: accessRaw };
     }
     try {
       const r = await fetch("/api/lovable/token", {
@@ -3421,12 +3428,7 @@ function FormOcorrenciaDireta({
 
   return (
     <div className="border-t border-gray-200 pt-4 mb-4">
-      <button
-        onClick={() => setOpen((v) => !v)}
-        className="text-sm font-semibold text-purple-700 hover:text-purple-900 flex items-center gap-2"
-      >
-        <span>{open ? "▾" : "▸"}</span> Registrar direto (sem Tampermonkey)
-      </button>
+      <h4 className="text-sm font-semibold text-purple-700 mb-2">Registrar direto (sem Tampermonkey)</h4>
 
       {open && (
         <div className="mt-3 space-y-3 bg-purple-50/40 border border-purple-200 rounded-lg p-4">
@@ -3462,9 +3464,9 @@ function FormOcorrenciaDireta({
                   Em <a href="https://preview--centraldeocorrenciasemultas.lovable.app/adm/funil-ocorrencias" target="_blank" rel="noopener" className="underline">centraldeocorrenciasemultas.lovable.app</a> → F12 → Console:
                 </p>
                 <pre className="bg-gray-900 text-green-300 text-[10px] p-2 rounded overflow-x-auto select-all">{`(()=>{const e=Object.entries(localStorage).find(([k])=>k.includes('supabase')||k.startsWith('sb-'));if(!e)return'sem auth';const v=e[1].startsWith('base64-')?atob(e[1].slice(7)):e[1];const j=JSON.parse(v);console.log('access_token:',j.access_token);console.log('refresh_token:',j.refresh_token);copy(j.refresh_token);return'refresh_token copiado'})()`}</pre>
-                <textarea value={tokenAccessInput} onChange={(e) => setTokenAccessInput(e.target.value)} placeholder="access_token (eyJhbGc...) ou JSON inteiro" rows={3} className="w-full border border-current rounded px-2 py-1 text-[10px] font-mono bg-white text-gray-900" />
-                <input type="text" value={tokenRefreshInput} onChange={(e) => setTokenRefreshInput(e.target.value)} placeholder="refresh_token (deixe vazio se colou JSON)" className="w-full border border-current rounded px-2 py-1 text-[10px] font-mono bg-white text-gray-900" />
-                <button onClick={salvarToken} disabled={!tokenAccessInput.trim()} className="bg-current text-white px-3 py-1.5 rounded text-[11px] font-medium disabled:opacity-50">Salvar Token</button>
+                <textarea value={tokenAccessInput} onChange={(e) => setTokenAccessInput(e.target.value)} placeholder="access_token (eyJhbGc...) ou JSON inteiro — opcional se preencher refresh_token" rows={3} className="w-full border border-current rounded px-2 py-1 text-[10px] font-mono bg-white text-gray-900" />
+                <input type="text" value={tokenRefreshInput} onChange={(e) => setTokenRefreshInput(e.target.value)} placeholder="refresh_token (basta este — gera o access via Supabase)" className="w-full border border-current rounded px-2 py-1 text-[10px] font-mono bg-white text-gray-900" />
+                <button onClick={salvarToken} disabled={!tokenAccessInput.trim() && !tokenRefreshInput.trim()} className="bg-current text-white px-3 py-1.5 rounded text-[11px] font-medium disabled:opacity-50">Salvar Token</button>
               </div>
             )}
           </div>
@@ -3844,18 +3846,43 @@ function FormOcorrencia() {
       {/* 2. Textos copiar Sults */}
       <div className="border-t border-gray-200 pt-4 mt-4 mb-4">
         <h4 className="text-sm font-semibold text-gray-700 mb-2">Textos copiar Sults</h4>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-nowrap gap-2 items-end overflow-x-auto">
           <button
             onClick={() => copyText("Ocorrência registrada - Falta de retorno", "falta")}
-            className="bg-gray-100 text-gray-700 px-4 py-2 rounded-md text-sm font-medium hover:bg-gray-200 transition-colors"
+            className="bg-gray-100 text-gray-700 px-2.5 py-2 rounded-md text-xs font-medium hover:bg-gray-200 transition-colors whitespace-nowrap"
           >
-            {copied === "falta" ? "Copiado!" : "Ocorrência - Falta de retorno"}
+            {copied === "falta" ? "Copiado!" : "Falta de retorno"}
           </button>
           <button
             onClick={() => copyText("Ocorrência registrada - Não enviou os registros", "registros")}
-            className="bg-gray-100 text-gray-700 px-4 py-2 rounded-md text-sm font-medium hover:bg-gray-200 transition-colors"
+            className="bg-gray-100 text-gray-700 px-2.5 py-2 rounded-md text-xs font-medium hover:bg-gray-200 transition-colors whitespace-nowrap"
           >
-            {copied === "registros" ? "Copiado!" : "Ocorrência - Não enviou registros"}
+            {copied === "registros" ? "Copiado!" : "Não enviou registros"}
+          </button>
+          <div className="flex items-end gap-1">
+            <div>
+              <label className="text-[10px] text-gray-500 block mb-0.5">Dias</label>
+              <input
+                type="number"
+                value={dias}
+                onChange={(e) => setDias(e.target.value)}
+                placeholder="5"
+                className="border border-gray-300 rounded-md px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-purple-500 w-14"
+              />
+            </div>
+            <button
+              onClick={() => copyText(`Franquia está a ${dias} dias sem dar retorno, atrasando os processos da implantação e prejudicando os KPI's de leadtime.`, "cobranca")}
+              disabled={!dias.trim()}
+              className="bg-gray-100 text-gray-700 px-2.5 py-2 rounded-md text-xs font-medium hover:bg-gray-200 disabled:opacity-50 transition-colors whitespace-nowrap"
+            >
+              {copied === "cobranca" ? "Copiado!" : "Texto de cobrança"}
+            </button>
+          </div>
+          <button
+            onClick={() => copyText("Franquia sinalizou que iria enviar os registros e não enviou, atrasando os processos da implantação e prejudicando os KPI's de leadtime.", "naoenviou")}
+            className="bg-gray-100 text-gray-700 px-2.5 py-2 rounded-md text-xs font-medium hover:bg-gray-200 transition-colors whitespace-nowrap"
+          >
+            {copied === "naoenviou" ? "Copiado!" : "Não enviou registro"}
           </button>
         </div>
       </div>
@@ -3863,23 +3890,9 @@ function FormOcorrencia() {
       {/* 3. Registrar direto (sem Tampermonkey) */}
       <FormOcorrenciaDireta initialCodigo={codigoOcorrencia} initialFranquia={franquiaOcorrencia} initialDescricao={descricaoOcorrencia} />
 
-      {/* 4. Legacy: Texto de cobrança + Abrir ocorrência (Tampermonkey) */}
+      {/* 4. Legacy: Abrir ocorrência (Tampermonkey) */}
       <div className="border-t border-gray-200 pt-4 mt-4">
-        <h4 className="text-sm font-semibold text-gray-700 mb-2">Texto de cobrança</h4>
-        <div className="flex gap-2 items-end mb-4">
-          <div>
-            <label className="text-xs text-gray-500 block mb-1">Quantidade de dias</label>
-            <input type="number" value={dias} onChange={(e) => setDias(e.target.value)} placeholder="Ex: 5" className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 w-24" />
-          </div>
-          <button
-            onClick={() => copyText(`Franquia está a ${dias} dias sem dar retorno, atrasando os processos da implantação.`, "dias")}
-            disabled={!dias.trim()}
-            className="bg-gray-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-gray-700 disabled:opacity-50 transition-colors whitespace-nowrap"
-          >
-            {copied === "dias" ? "Copiado!" : "Copiar texto"}
-          </button>
-        </div>
-
+        <h4 className="text-sm font-semibold text-gray-700 mb-2">Abrir ocorrência (Tampermonkey)</h4>
         <div className="space-y-3">
           <div className="flex gap-2 items-end">
             <div>

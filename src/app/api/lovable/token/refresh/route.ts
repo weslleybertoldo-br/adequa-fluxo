@@ -30,6 +30,19 @@ export async function POST(req: NextRequest) {
     setLovableTokenCookie(res, next);
     return res;
   } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (/Sem token lovable/i.test(msg)) {
+      return NextResponse.json(
+        { error: "Sem token cadastrado — clique Cadastrar token" },
+        { status: 401 }
+      );
+    }
+    if (/Refresh lovable falhou/i.test(msg)) {
+      return NextResponse.json(
+        { error: "refresh_token expirado — clique Resetar e cadastre token novo" },
+        { status: 401 }
+      );
+    }
     return errorResponse(e, { status: 500 });
   }
 }
