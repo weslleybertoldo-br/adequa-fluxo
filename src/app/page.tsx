@@ -4028,7 +4028,7 @@ function FormSuporte() {
   const [processos, setProcessos] = useState<{ id: string; nome: string }[]>([]);
   const [processoId, setProcessoId] = useState<string>("");
   const [loadingProcessos, setLoadingProcessos] = useState(false);
-  const [categoria, setCategoria] = useState(CATEGORIAS_SUPORTE[0]);
+  const [problema, setProblema] = useState("Falta de retorno da franquia");
   const [setor, setSetor] = useState(SETORES_SUPORTE[0]);
   const [assunto, setAssunto] = useState<typeof ASSUNTOS_SUPORTE[number]>("Comunicação");
   const [urgencia, setUrgencia] = useState<string>("media");
@@ -4087,7 +4087,7 @@ function FormSuporte() {
         body: JSON.stringify({
           email: "weslley.bertoldo@seazone.com.br",
           codigo: codigo.trim(),
-          categoria,
+          categoria: problema,
           setor,
           descricao: descricao.trim(),
           franqueado,
@@ -4153,10 +4153,8 @@ function FormSuporte() {
         </div>
 
         <div>
-          <label className="text-sm font-medium text-gray-700 block mb-1">Categoria da solicitação <span className="text-[10px] text-gray-400">(checklist interno)</span></label>
-          <select value={categoria} onChange={(e) => setCategoria(e.target.value)} className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm bg-white">
-            {CATEGORIAS_SUPORTE.map((c) => <option key={c} value={c}>{c}</option>)}
-          </select>
+          <label className="text-sm font-medium text-gray-700 block mb-1">Problema</label>
+          <input type="text" value={problema} onChange={(e) => setProblema(e.target.value)} placeholder="Falta de retorno da franquia" className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
         </div>
 
         <div>
@@ -4182,7 +4180,7 @@ function FormSuporte() {
         </div>
 
         <div>
-          <label className="text-sm font-medium text-gray-700 block mb-1">Descrição do Problema</label>
+          <label className="text-sm font-medium text-gray-700 block mb-1">Descreva seu problema</label>
           <textarea
             value={descricao}
             onChange={(e) => setDescricao(e.target.value)}
