@@ -7,11 +7,10 @@ import {
 } from "@/lib/suporte-ops-auth";
 import { SUPORTE_USER_WESLLEY } from "@/lib/suporte-ops";
 
-// IDs do projeto suporte-ops descobertos via inspecao da tabela `processos`/`areas`.
-// Aba "Suporte Franquias" do pipefy-enxoval sempre cria card no processo
-// "Suporte Franquia" (area Franquias).
-const AREA_FRANQUIAS = "a0000002-aaaa-0000-0000-000000000002";
-const PROCESSO_SUPORTE_FRANQUIA = "58f5867d-3e3e-4428-ae8e-319bc4cc1048";
+// Defaults: area Franquias + processo "Suporte Franquia" (compat retro).
+const AREA_FRANQUIAS_DEFAULT = "a0000002-aaaa-0000-0000-000000000002";
+const PROCESSO_SUPORTE_FRANQUIA_DEFAULT = "58f5867d-3e3e-4428-ae8e-319bc4cc1048";
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // Assuntos do processo (enum em campos_json): Comunicacao, Enxoval, Vistoria, Insatisfacao Proprietario
 const ASSUNTOS_VALIDOS = ["Comunicação", "Enxoval", "Vistoria", "Insatisfação Proprietário"] as const;
 
@@ -29,7 +28,13 @@ export async function POST(req: NextRequest) {
       franqueado,
       assunto,
       urgencia,
+      area_id,
+      processo_id,
+      processo_nome,
     } = await req.json();
+
+    const areaIdFinal = UUID_RE.test(area_id || "") ? area_id : AREA_FRANQUIAS_DEFAULT;
+    const processoIdFinal = UUID_RE.test(processo_id || "") ? processo_id : PROCESSO_SUPORTE_FRANQUIA_DEFAULT;
 
     if (!codigo || !descricao) {
       return NextResponse.json(
@@ -61,6 +66,8 @@ export async function POST(req: NextRequest) {
     };
 
     const camposAdicionaisTxt = [
+      `Área: ${areaIdFinal === AREA_FRANQUIAS_DEFAULT ? "Franquias" : areaIdFinal}`,
+      `Processo: ${processo_nome || "-"}`,
       `Setor: ${setor || "-"}`,
       `Assunto: ${assuntoFinal}`,
       `Problema: ${categoria || "-"}`,
@@ -71,8 +78,8 @@ export async function POST(req: NextRequest) {
 
     const body = {
       codigo_imovel: codigo.trim().toUpperCase() || "SEM-CODIGO",
-      area_id: AREA_FRANQUIAS,
-      processo_id: PROCESSO_SUPORTE_FRANQUIA,
+      area_id: areaIdFinal,
+      processo_id: processoIdFinal,
       solicitante_id: SUPORTE_USER_WESLLEY,
       urgencia: urgenciaFinal,
       status: "novo",

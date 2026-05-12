@@ -4013,10 +4013,21 @@ function saudacaoBR(): string {
   return h < 12 ? "bom dia" : h < 18 ? "boa tarde" : "boa noite";
 }
 
+const AREAS_SUPORTE = [
+  { id: "a0000002-aaaa-0000-0000-000000000002", nome: "Franquias" },
+  { id: "a0000003-aaaa-0000-0000-000000000003", nome: "Hóspede" },
+  { id: "a0000001-aaaa-0000-0000-000000000001", nome: "Implantação" },
+  { id: "a0000004-aaaa-0000-0000-000000000004", nome: "Proprietários" },
+] as const;
+
 function FormSuporte() {
   const [codigo, setCodigo] = useState("");
   const [franqueado, setFranqueado] = useState("");
   const [loadingFranqueado, setLoadingFranqueado] = useState(false);
+  const [areaId, setAreaId] = useState<string>(AREAS_SUPORTE[0].id);
+  const [processos, setProcessos] = useState<{ id: string; nome: string }[]>([]);
+  const [processoId, setProcessoId] = useState<string>("");
+  const [loadingProcessos, setLoadingProcessos] = useState(false);
   const [categoria, setCategoria] = useState(CATEGORIAS_SUPORTE[0]);
   const [setor, setSetor] = useState(SETORES_SUPORTE[0]);
   const [assunto, setAssunto] = useState<typeof ASSUNTOS_SUPORTE[number]>("Comunicação");
@@ -4047,6 +4058,25 @@ function FormSuporte() {
     }
   }, [codigo]);
 
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoadingProcessos(true);
+      try {
+        const r = await fetch(`/api/suporte-ops/processos?area_id=${encodeURIComponent(areaId)}`);
+        if (!r.ok) return;
+        const data: { id: string; nome: string }[] = await r.json();
+        if (cancelled) return;
+        setProcessos(data);
+        const suporteFranquia = data.find((p) => p.nome === "Suporte Franquia");
+        setProcessoId(suporteFranquia?.id || data[0]?.id || "");
+      } finally {
+        if (!cancelled) setLoadingProcessos(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [areaId]);
+
   const handleEnviar = async () => {
     setSending(true);
     setResult(null);
@@ -4063,6 +4093,9 @@ function FormSuporte() {
           franqueado,
           assunto,
           urgencia,
+          area_id: areaId,
+          processo_id: processoId,
+          processo_nome: processos.find((p) => p.id === processoId)?.nome,
         }),
       });
       const data = await res.json();
@@ -4104,8 +4137,23 @@ function FormSuporte() {
           <input type="text" value={codigo} onChange={(e) => setCodigo(e.target.value.toUpperCase())} placeholder="Ex: ALA0004" className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
         </div>
 
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="text-sm font-medium text-gray-700 block mb-1">Área *</label>
+            <select value={areaId} onChange={(e) => setAreaId(e.target.value)} className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm bg-white">
+              {AREAS_SUPORTE.map((a) => <option key={a.id} value={a.id}>{a.nome}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-sm font-medium text-gray-700 block mb-1">Processo *{loadingProcessos && <span className="text-[10px] text-gray-400 ml-1">(carregando...)</span>}</label>
+            <select value={processoId} onChange={(e) => setProcessoId(e.target.value)} disabled={loadingProcessos || processos.length === 0} className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm bg-white disabled:bg-gray-100">
+              {processos.map((p) => <option key={p.id} value={p.id}>{p.nome}</option>)}
+            </select>
+          </div>
+        </div>
+
         <div>
-          <label className="text-sm font-medium text-gray-700 block mb-1">Categoria da solicitação</label>
+          <label className="text-sm font-medium text-gray-700 block mb-1">Categoria da solicitação <span className="text-[10px] text-gray-400">(checklist interno)</span></label>
           <select value={categoria} onChange={(e) => setCategoria(e.target.value)} className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm bg-white">
             {CATEGORIAS_SUPORTE.map((c) => <option key={c} value={c}>{c}</option>)}
           </select>
