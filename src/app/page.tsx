@@ -5731,6 +5731,34 @@ const FASE_SEQUENCE: ReadonlyArray<{ status: string; label: string }> = [
   { status: "arquivado", label: "Arquivado" },
 ];
 
+// SLA: usa `card.due_date` (sla_deadline do suporte-ops) e compara com agora.
+// Cards concluidos/arquivados ficam sem badge.
+function calcSlaStatus(
+  card: any
+): { vencido: boolean; alerta: boolean; texto: string } | null {
+  if (card.status === "concluido" || card.status === "arquivado") return null;
+  const deadline = card.due_date;
+  if (!deadline) return null;
+  const due = new Date(deadline).getTime();
+  const now = Date.now();
+  if (!Number.isFinite(due)) return null;
+  const diffMs = due - now;
+  const abs = Math.abs(diffMs);
+  const d = Math.floor(abs / 86400000);
+  const h = Math.floor((abs % 86400000) / 3600000);
+  const m = Math.floor((abs % 3600000) / 60000);
+  const texto = d > 0 ? `${d}d ${h}h` : h > 0 ? `${h}h ${m}min` : `${m}min`;
+  if (diffMs < 0) {
+    return { vencido: true, alerta: false, texto: `SLA atrasado há ${texto}` };
+  }
+  const horasRestantes = diffMs / 3600000;
+  return {
+    vencido: false,
+    alerta: horasRestantes < 4,
+    texto: `SLA: faltam ${texto}`,
+  };
+}
+
 function CardTrocaCode({ card, phaseName, getFieldValue, onReload }: CardTrocaCodeProps) {
   const [expanded, setExpanded] = useState(false);
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
@@ -5856,13 +5884,19 @@ function CardTrocaCode({ card, phaseName, getFieldValue, onReload }: CardTrocaCo
           parciaisAntigo: data.parciaisAntigo,
           exatosNovo: data.exatosNovo,
         });
+        let valor: "sim" | "nao" | "pendente";
+        if (data.codigoNovoJaExiste) {
+          // Ambos coexistem → bloqueia troca, usuario tem que escolher outro
+          valor = "nao";
+        } else if (data.exatosNovo.length > 0 && data.exatosAntigo.length === 0) {
+          // Só o novo existe → troca já feita
+          valor = "sim";
+        } else {
+          valor = "pendente";
+        }
         setStatus((prev) => ({
           ...prev,
-          pipefy: {
-            // se já existe card com o código novo, sinalizar como "sim" (troca já feita / duplicidade)
-            valor: data.exatosNovo.length > 0 && data.exatosAntigo.length === 0 ? "sim" : "pendente",
-            mensagem: data.resumo,
-          },
+          pipefy: { valor, mensagem: data.resumo },
         }));
       } else {
         setStatus((prev) => ({
@@ -5884,6 +5918,12 @@ function CardTrocaCode({ card, phaseName, getFieldValue, onReload }: CardTrocaCo
   const aplicarTrocaPipefy = async () => {
     if (!pipefyPreview || pipefyPreview.exatosAntigo.length === 0) return;
     if (!codigoNovo) return;
+    if (pipefyPreview.exatosNovo.length > 0) {
+      window.alert(
+        `Código "${codigoNovo}" já existe no Pipefy (${pipefyPreview.exatosNovo.length} item(ns)). Escolha outro código novo.`
+      );
+      return;
+    }
 
     const total = pipefyPreview.exatosAntigo.length;
     const pipes = Array.from(
@@ -6122,12 +6162,14 @@ function CardTrocaCode({ card, phaseName, getFieldValue, onReload }: CardTrocaCo
       });
       const data = await res.json();
       if (data.success) {
-        // Se nada precisa mudar, a Stays já está com o código novo → marca
-        // "Sim" no tracker e NÃO abre o bloco preview (não tem o que confirmar).
+        // Sem patch: ou ja foi trocado (sim) ou codigo nao esta na Stays (nao).
         if (!data.precisaPatch) {
           setStatus((prev) => ({
             ...prev,
-            stays: { valor: "sim", mensagem: data.mensagem },
+            stays: {
+              valor: data.jaTrocado ? "sim" : "nao",
+              mensagem: data.mensagem,
+            },
           }));
           setStaysPreview(null);
         } else {
@@ -6192,8 +6234,20 @@ function CardTrocaCode({ card, phaseName, getFieldValue, onReload }: CardTrocaCo
     }
   };
 
+  const sla = calcSlaStatus(card);
+  const slaWrapperClass = sla?.vencido
+    ? "bg-red-50 rounded-lg shadow border-2 border-red-500 overflow-hidden"
+    : sla?.alerta
+      ? "bg-white rounded-lg shadow border-2 border-orange-400 overflow-hidden"
+      : "bg-white rounded-lg shadow border border-gray-200 overflow-hidden";
+  const slaBadgeClass = sla?.vencido
+    ? "text-xs font-semibold px-1.5 py-0.5 bg-red-600 text-white rounded"
+    : sla?.alerta
+      ? "text-xs font-semibold px-1.5 py-0.5 bg-orange-500 text-white rounded"
+      : "text-xs px-1.5 py-0.5 bg-gray-100 text-gray-700 rounded";
+
   return (
-    <div className="bg-white rounded-lg shadow border border-gray-200 overflow-hidden">
+    <div className={slaWrapperClass}>
       {/* Header do card */}
       <div
         role="button"
@@ -6232,6 +6286,7 @@ function CardTrocaCode({ card, phaseName, getFieldValue, onReload }: CardTrocaCo
                   {card.urgencia}
                 </span>
               )}
+              {sla && <span className={slaBadgeClass}>{sla.texto}</span>}
             </div>
           </div>
         </div>
