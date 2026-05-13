@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
       categoria,
       setor,
       descricao,
-      franqueado,
+      consultor,
       assunto,
       urgencia,
       area_id,
@@ -61,7 +61,7 @@ export async function POST(req: NextRequest) {
         Setor: setor || "",
         Assunto: assuntoFinal,
         Problema: categoria || "",
-        Consultor: franqueado || "",
+        Consultor: consultor || "",
       },
     };
 
@@ -71,7 +71,7 @@ export async function POST(req: NextRequest) {
       `Setor: ${setor || "-"}`,
       `Assunto: ${assuntoFinal}`,
       `Problema: ${categoria || "-"}`,
-      `Consultor: ${franqueado || "-"}`,
+      `Consultor: ${consultor || "-"}`,
     ].join("\n");
 
     const descricaoCompleta = `${descricao}\n\n--- Campos adicionais ---\n${camposAdicionaisTxt}`;

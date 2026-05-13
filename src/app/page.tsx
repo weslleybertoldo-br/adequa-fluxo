@@ -4023,6 +4023,7 @@ const AREAS_SUPORTE = [
 function FormSuporte() {
   const [codigo, setCodigo] = useState("");
   const [franqueado, setFranqueado] = useState("");
+  const [consultor, setConsultor] = useState("Weslley Bertoldo da Silva");
   const [loadingFranqueado, setLoadingFranqueado] = useState(false);
   const [areaId, setAreaId] = useState<string>(AREAS_SUPORTE[0].id);
   const [processos, setProcessos] = useState<{ id: string; nome: string }[]>([]);
@@ -4090,7 +4091,7 @@ function FormSuporte() {
           categoria: problema,
           setor,
           descricao: descricao.trim(),
-          franqueado,
+          consultor,
           assunto,
           urgencia,
           area_id: areaId,
@@ -4188,6 +4189,11 @@ function FormSuporte() {
             rows={5}
             className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
+        </div>
+
+        <div>
+          <label className="text-sm font-medium text-gray-700 block mb-1">Consultor</label>
+          <input type="text" value={consultor} onChange={(e) => setConsultor(e.target.value)} placeholder="Nome do consultor Seazone" className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
         </div>
 
         <div>
