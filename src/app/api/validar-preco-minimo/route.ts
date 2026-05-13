@@ -103,6 +103,16 @@ export async function GET(request: NextRequest) {
       mensagem,
     });
   } catch (error: any) {
-    return errorResponse(error, { fallback: "Erro ao validar planilha de Preço Mínimo", status: 500 });
+    // DEBUG TEMP: expor detalhe na resposta (rota tem auth, leak controlado)
+    console.error("[validar-preco-minimo] erro:", error?.message, error?.stack);
+    return NextResponse.json(
+      {
+        error: "Erro ao validar planilha de Preço Mínimo",
+        detail: String(error?.message || error),
+        code: error?.code,
+        status: error?.response?.status,
+      },
+      { status: 500 }
+    );
   }
 }
