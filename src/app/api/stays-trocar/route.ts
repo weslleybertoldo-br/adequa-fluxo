@@ -7,18 +7,25 @@ const PIPE_1_ID = "303781436";
 const FIELD_STAYS_ID = "id_da_stays_do_im_vel";
 
 // Busca card no Pipe 1 com title=needle e devolve `id_da_stays_do_im_vel`.
-// Tenta antigo e novo pra cobrir os dois estados (pré e pós troca de título).
+// Tenta antigo e novo: a search da Pipefy as vezes acha pelo titulo historico
+// (busca QBA0601 retorna o card mesmo apos rename pra SLI0601), entao aceita
+// qualquer match cujo titulo atual seja codigoAntigo OU codigoNovo.
 async function getStaysIdFromPipe1(
   codigoAntigo: string,
   codigoNovo: string
 ): Promise<string | null> {
+  const seenCardIds = new Set<string>();
+  const titulosValidos = new Set(
+    [codigoAntigo, codigoNovo].filter(Boolean).map((c) => c.toUpperCase().trim())
+  );
   for (const codigo of [codigoAntigo, codigoNovo].filter(Boolean)) {
     try {
       const matches = await findCardsByTitleInPipe(PIPE_1_ID, codigo);
       const exato = matches.find(
-        (m) => m.title.toUpperCase().trim() === codigo.toUpperCase().trim()
+        (m) => titulosValidos.has(m.title.toUpperCase().trim())
       );
-      if (!exato) continue;
+      if (!exato || seenCardIds.has(exato.cardId)) continue;
+      seenCardIds.add(exato.cardId);
       const r = await pipefyQuery(`{
         card(id: ${exato.cardId}) {
           fields { field { id } value }

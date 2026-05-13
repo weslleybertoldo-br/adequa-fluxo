@@ -56,17 +56,25 @@ async function searchInPipe(
 
 // Procura card no Pipe 1 com title=needle e devolve o `id_da_stays_do_im_vel`
 // (campo único do Pipe 1). Pesquisa antigo e novo pra cobrir os dois estados.
+// Pipefy as vezes acha pelo titulo historico (buscar QBA0601 retorna o card
+// mesmo apos rename pra SLI0601), entao aceita qualquer card cujo titulo
+// atual seja codigoAntigo OU codigoNovo.
 async function getStaysIdFromPipe1(
   codigoAntigo: string,
   codigoNovo: string
 ): Promise<{ staysId: string; tituloMatch: string } | null> {
+  const seenCardIds = new Set<string>();
+  const titulosValidos = new Set(
+    [codigoAntigo, codigoNovo].filter(Boolean).map((c) => c.toUpperCase().trim())
+  );
   for (const codigo of [codigoAntigo, codigoNovo].filter(Boolean)) {
     try {
       const matches = await findCardsByTitleInPipe(PIPE_1_ID, codigo);
       const exato = matches.find(
-        (m) => m.title.toUpperCase().trim() === codigo.toUpperCase().trim()
+        (m) => titulosValidos.has(m.title.toUpperCase().trim())
       );
-      if (!exato) continue;
+      if (!exato || seenCardIds.has(exato.cardId)) continue;
+      seenCardIds.add(exato.cardId);
       const r = await pipefyQuery(`{
         card(id: ${exato.cardId}) {
           fields { field { id } value }
@@ -76,7 +84,7 @@ async function getStaysIdFromPipe1(
       const sf = fs.find((f) => f?.field?.id === FIELD_STAYS_ID);
       const v = sf?.value;
       if (typeof v === "string" && v.trim()) {
-        return { staysId: v.trim(), tituloMatch: codigo };
+        return { staysId: v.trim(), tituloMatch: exato.title };
       }
     } catch {
       // ignora e tenta o próximo
