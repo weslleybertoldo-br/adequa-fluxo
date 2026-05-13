@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, pipefyQuery, findCardsByTitleInPipe } from "@/lib/pipefy";
-import { trocarCodigoStays, previewTrocaStays } from "@/lib/stays";
+import {
+  trocarCodigoStays,
+  previewTrocaStays,
+  findStaysListingsByInternalName,
+} from "@/lib/stays";
 import { errorResponse } from "@/lib/errors";
 
 const PIPE_1_ID = "303781436";
@@ -80,25 +84,46 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    // Pre-flight: existe OUTRO listing na Stays com internalName=codigoNovo?
+    // Se sim, e nao for o mesmo staysId, ha conflito de duplicidade.
+    const conflitos = await findStaysListingsByInternalName(codigoNovo, staysId);
+    if (conflitos.length > 0) {
+      const lista = conflitos.map((c) => c._id).join(", ");
+      return NextResponse.json({
+        success: false,
+        codigoNovoJaExiste: true,
+        error: `Código "${codigoNovo}" já existe na Stays em outro listing (${lista}). Escolha outro código novo.`,
+      });
+    }
+
     // Dry-run: preview do que seria enviado, sem PATCH
     if (dryRun) {
       const p = await previewTrocaStays(staysId, codigoAntigo, codigoNovo);
       const titulosCount = Object.keys(p.titulosAtualizados).length;
       let mensagem: string;
+      let status: "precisa_trocar" | "ja_trocado" | "codigo_ausente";
       if (p.precisaPatch) {
+        status = "precisa_trocar";
         const partes: string[] = [];
         if (p.internalNameAntigo !== p.internalNameNovo) {
           partes.push(`internalName ${p.internalNameAntigo} → ${p.internalNameNovo}`);
         }
         if (titulosCount > 0) partes.push(`${titulosCount} título(s) serão atualizado(s)`);
         mensagem = `Preview Stays (listing ${staysId}): ${partes.join(" + ")}.`;
+      } else if (p.jaTrocado) {
+        status = "ja_trocado";
+        mensagem = `Listing ${staysId}: já foi trocado — internalName atual "${p.internalNameAntigo}" bate com "${codigoNovo}".`;
       } else {
-        mensagem = `Listing ${staysId}: nada a alterar — internalName "${p.internalNameAntigo}" não bate com "${codigoAntigo}" e nenhum título contém o código antigo (provavelmente já foi trocado).`;
+        status = "codigo_ausente";
+        mensagem = `Listing ${staysId}: código "${codigoAntigo}" não está na Stays — internalName atual "${p.internalNameAntigo}" não bate nem com "${codigoAntigo}" nem com "${codigoNovo}", e nenhum título contém esses códigos. Confirme se o ID Stays está correto.`;
       }
       return NextResponse.json({
         success: true,
         dryRun: true,
         precisaPatch: p.precisaPatch,
+        jaTrocado: p.jaTrocado,
+        codigoAusente: p.codigoAusente,
+        status,
         staysId,
         internalNameAntigo: p.internalNameAntigo,
         internalNameNovo: p.internalNameNovo,
@@ -120,14 +145,17 @@ export async function POST(request: NextRequest) {
       }
       if (titulosCount > 0) partes.push(`${titulosCount} título(s) atualizado(s)`);
       mensagem = `Stays atualizada (listing ${staysId}): ${partes.join(" + ")}.`;
+    } else if (r.status === "ja_trocado") {
+      mensagem = `Listing ${staysId}: já foi trocado — internalName atual "${r.internalNameAntigo}" bate com "${codigoNovo}".`;
     } else {
-      mensagem = `Listing ${staysId}: nada a alterar — internalName "${r.internalNameAntigo}" não bate com "${codigoAntigo}" e nenhum título contém o código antigo (provavelmente já foi trocado).`;
+      mensagem = `Listing ${staysId}: código "${codigoAntigo}" não está na Stays — internalName atual "${r.internalNameAntigo}" não bate nem com "${codigoAntigo}" nem com "${codigoNovo}". Confirme se o ID Stays está correto.`;
     }
 
     return NextResponse.json({
       success: true,
       dryRun: false,
       patchEnviado: r.patchEnviado,
+      status: r.status,
       staysId,
       internalNameAntigo: r.internalNameAntigo,
       internalNameNovo: r.internalNameNovo,

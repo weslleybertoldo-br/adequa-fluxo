@@ -50,6 +50,37 @@ export async function getStaysListing(listingId: string): Promise<any> {
   return r.json();
 }
 
+// Busca listings cujo internalName == codigo. Stays API aceita filtro `q`
+// (busca textual ampla) ou `internalName` direto, mas comportamento varia por
+// versao. Usamos `q=codigo` e filtramos client-side por internalName exato.
+// Retorna apenas listings que NAO sao `excludeListingId`. Falha graciosamente.
+export async function findStaysListingsByInternalName(
+  codigo: string,
+  excludeListingId?: string
+): Promise<Array<{ _id: string; internalName: string }>> {
+  if (!codigo) return [];
+  const q = encodeURIComponent(codigo);
+  try {
+    const r = await staysFetch(`/content/listings?q=${q}&limit=20`);
+    if (!r.ok) return [];
+    const data = await r.json();
+    const items = Array.isArray(data) ? data : (data?.data || data?.items || []);
+    const target = codigo.toUpperCase().trim();
+    return items
+      .filter((it: any) => {
+        const idHit = String(it?._id || it?.id || "");
+        const internal = String(it?.internalName || "").toUpperCase().trim();
+        return internal === target && idHit !== excludeListingId;
+      })
+      .map((it: any) => ({
+        _id: String(it?._id || it?.id || ""),
+        internalName: String(it?.internalName || ""),
+      }));
+  } catch {
+    return [];
+  }
+}
+
 export async function patchStaysListing(
   listingId: string,
   body: Record<string, any>
@@ -79,6 +110,11 @@ export interface StaysTrocaResult {
   titulosAtualizados: Record<string, { antigo: string; novo: string }>;
   // True se o PATCH realmente foi disparado (false = drift, internalName atual já não bate)
   patchEnviado: boolean;
+  // Status do listing apos a operacao:
+  //  - "ja_trocado": internalName/titulos ja batem com codigoNovo (PATCH nao disparado)
+  //  - "codigo_ausente": nao bate nem com antigo nem com novo (listing diferente)
+  //  - "trocado_agora": PATCH disparado e aplicado
+  status?: "ja_trocado" | "codigo_ausente" | "trocado_agora";
 }
 
 // Atualiza internalName + sufixo do _mstitle em todos os idiomas que contêm o código antigo.
@@ -98,6 +134,9 @@ export async function previewTrocaStays(
   titulosAtualizados: Record<string, { antigo: string; novo: string }>;
   body: Record<string, any>;
   precisaPatch: boolean;
+  // Sem precisaPatch, distingue listing ja com codigoNovo vs listing com codigo desconhecido
+  jaTrocado: boolean;
+  codigoAusente: boolean;
 }> {
   const listing = await getStaysListing(listingId);
   const internalNameAntigo: string = listing.internalName || "";
@@ -109,10 +148,12 @@ export async function previewTrocaStays(
   const body: Record<string, any> = {};
   const titulosAtualizados: Record<string, { antigo: string; novo: string }> = {};
 
+  const antigoNorm = codigoAntigo.toUpperCase().trim();
+  const novoNorm = codigoNovo.toUpperCase().trim();
+  const internalNameAtualNorm = internalNameAntigo.toUpperCase().trim();
+
   // 1) internalName
-  if (
-    internalNameAntigo.toUpperCase().trim() === codigoAntigo.toUpperCase().trim()
-  ) {
+  if (internalNameAtualNorm === antigoNorm) {
     body.internalName = codigoNovo;
   }
 
@@ -132,12 +173,31 @@ export async function previewTrocaStays(
     body._mstitle = newMstitle;
   }
 
+  const precisaPatch = Object.keys(body).length > 0;
+
+  // Quando nao precisa patch, classificar: ja foi trocado OU codigo desconhecido
+  let jaTrocado = false;
+  let codigoAusente = false;
+  if (!precisaPatch) {
+    const reNovo = new RegExp(escapeRegex(codigoNovo), "i");
+    const mstitleTemNovo = Object.values(mstitle).some(
+      (v) => typeof v === "string" && reNovo.test(v)
+    );
+    if (internalNameAtualNorm === novoNorm || mstitleTemNovo) {
+      jaTrocado = true;
+    } else {
+      codigoAusente = true;
+    }
+  }
+
   return {
     internalNameAntigo,
     internalNameNovo: body.internalName ?? internalNameAntigo,
     titulosAtualizados,
     body,
-    precisaPatch: Object.keys(body).length > 0,
+    precisaPatch,
+    jaTrocado,
+    codigoAusente,
   };
 }
 
@@ -154,6 +214,7 @@ export async function trocarCodigoStays(
       internalNameNovo: preview.internalNameAntigo,
       titulosAtualizados: {},
       patchEnviado: false,
+      status: preview.jaTrocado ? "ja_trocado" : "codigo_ausente",
     };
   }
 
@@ -164,5 +225,6 @@ export async function trocarCodigoStays(
     internalNameNovo: preview.internalNameNovo,
     titulosAtualizados: preview.titulosAtualizados,
     patchEnviado: true,
+    status: "trocado_agora",
   };
 }

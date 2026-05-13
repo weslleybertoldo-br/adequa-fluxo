@@ -117,8 +117,13 @@ export async function GET(request: NextRequest) {
     const parciaisAntigo = matchesAntigoAll.filter((m) => m.matchType === "partial");
     const exatosNovo = matchesNovoAll.filter((m) => m.matchType === "exact");
 
+    // Bloqueio: ambos os codigos coexistem no Pipefy → escolher outro codigoNovo
+    const codigoNovoJaExiste = exatosAntigo.length > 0 && exatosNovo.length > 0;
+
     let resumo = "";
-    if (exatosAntigo.length === 0) {
+    if (codigoNovoJaExiste) {
+      resumo = `Código "${codigoNovo}" já existe no Pipefy (${exatosNovo.length} item(ns)) — escolha outro código novo. Antigo "${codigoAntigo}": ${exatosAntigo.length} item(ns).`;
+    } else if (exatosAntigo.length === 0) {
       resumo = `Nenhum item com "${codigoAntigo}" encontrado nos ${PIPES_TROCA.length} pipes + ${TABELAS_TROCA.length} tabelas monitorados.`;
     } else {
       const porContainer = exatosAntigo.reduce<Record<string, number>>(
@@ -134,8 +139,8 @@ export async function GET(request: NextRequest) {
       resumo = `${exatosAntigo.length} item(ns) com "${codigoAntigo}" — ${partes.join(", ")}.`;
     }
 
-    if (exatosNovo.length > 0) {
-      resumo += ` ⚠ ${exatosNovo.length} item(ns) já existem com "${codigoNovo}" — risco de duplicidade.`;
+    if (!codigoNovoJaExiste && exatosNovo.length > 0) {
+      resumo += ` (${exatosNovo.length} item(ns) já existem com "${codigoNovo}").`;
     }
 
     return NextResponse.json({
@@ -143,6 +148,7 @@ export async function GET(request: NextRequest) {
       codigoAntigo,
       codigoNovo,
       resumo,
+      codigoNovoJaExiste,
       // Mantém os nomes antigos (`exatosAntigo` etc) que o frontend já consome,
       // mas com payload expandido (kind: card|record, containerLabel etc).
       exatosAntigo,

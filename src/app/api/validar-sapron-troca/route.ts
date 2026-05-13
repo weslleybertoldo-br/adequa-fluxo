@@ -49,7 +49,7 @@ export async function GET(request: NextRequest) {
 
     if (encontradoAntigo && encontradoNovo) {
       statusTroca = "erro";
-      mensagem = `ERRO: Ambos códigos existem (Antigo: ${codigoAntigo}, Novo: ${codigoNovo}) - não deveria ter ambos`;
+      mensagem = `Código "${codigoNovo}" já existe no Sapron (id ${encontradoNovo.id}, status ${encontradoNovo.status}) — escolha outro código novo. Antigo "${codigoAntigo}" também ainda está la (id ${encontradoAntigo.id}).`;
     } else if (encontradoAntigo && !encontradoNovo) {
       statusTroca = "nao_iniciado";
       mensagem = `Código antigo (${codigoAntigo}) ainda existe, código novo (${codigoNovo}) não encontrado - troca não realizada`;
