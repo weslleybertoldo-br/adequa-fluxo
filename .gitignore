@@ -7,3 +7,4 @@ next-env.d.ts
 .env*.local
 .suporte-ops-token.json
 .lovable-token.json
+scripts-sults-test.mjs

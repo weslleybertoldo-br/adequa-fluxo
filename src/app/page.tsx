@@ -1224,6 +1224,627 @@ function CopyScriptSoEnxoval({ cardTitle }: { cardTitle?: string }) {
   );
 }
 
+type SultsChamado = {
+  id: number;
+  titulo: string;
+  codigo: string | null;
+  dtUltAlteracao: string | null;
+  dtCriacao: string | null;
+  situacao: number | null;
+  responsavelNome: string | null;
+  url: string;
+};
+
+type SultsMedia = {
+  id: number;
+  nome: string;
+  url: string;
+  urlDownload: string;
+  isImage: boolean;
+  isVideo: boolean;
+  interacaoId: number | null;
+};
+
+type SultsExtractResult = {
+  os: { id: number; titulo: string; codigo: string | null };
+  total: number;
+  images: number;
+  videos: number;
+  others: number;
+  media: SultsMedia[];
+};
+
+type DriveFolderCandidate = { id: string; name: string; parentName: string | null; url: string };
+type DriveUploadResult = {
+  pendenciasFolderId: string;
+  pendenciasUrl: string;
+  createdPendencias: boolean;
+  uploaded: { name: string; id: string }[];
+  skipped: string[];
+  errors: { name: string; error: string }[];
+};
+
+function ExtrairRegistrosSults({ cardTitle }: { cardTitle?: string }) {
+  const [open, setOpen] = useState(false);
+  const [input, setInput] = useState("");
+  const [includeArquivos, setIncludeArquivos] = useState(false);
+  const [step, setStep] = useState<"input" | "select" | "result" | "drive-folder" | "drive-uploading" | "drive-done">("input");
+  const [chamados, setChamados] = useState<SultsChamado[]>([]);
+  const [selectedOsId, setSelectedOsId] = useState<number | null>(null);
+  const [result, setResult] = useState<SultsExtractResult | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [driveToken, setDriveToken] = useState<string>("");
+  const [showTokenInput, setShowTokenInput] = useState(false);
+  const [tokenDraft, setTokenDraft] = useState("");
+  const [driveCandidates, setDriveCandidates] = useState<DriveFolderCandidate[]>([]);
+  const [selectedDriveFolder, setSelectedDriveFolder] = useState<string | null>(null);
+  const [driveResult, setDriveResult] = useState<DriveUploadResult | null>(null);
+  const [selectedMedia, setSelectedMedia] = useState<Set<string>>(new Set());
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewIsVideo, setPreviewIsVideo] = useState(false);
+
+  const mediaKey = (m: SultsMedia, idx: number) => `${m.id}-${idx}`;
+  const toggleAll = (checked: boolean) => {
+    if (!result) return;
+    setSelectedMedia(checked ? new Set(result.media.map((m, i) => mediaKey(m, i))) : new Set());
+  };
+  const toggleOne = (k: string) => {
+    setSelectedMedia((prev) => {
+      const next = new Set(prev);
+      if (next.has(k)) next.delete(k); else next.add(k);
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const t = localStorage.getItem("gdrive_token") || "";
+      setDriveToken(t);
+    }
+  }, []);
+
+  useEffect(() => {
+    const handler = (e: MessageEvent) => {
+      if (!e.data || e.data.type !== "gdrive-oauth") return;
+      const p = e.data.payload as { access_token?: string; refresh_token?: string; expires_in?: number; error?: string };
+      if (p.error) {
+        setError("OAuth: " + p.error);
+        return;
+      }
+      if (p.access_token) {
+        saveToken(p.access_token);
+        if (p.refresh_token) localStorage.setItem("gdrive_refresh", p.refresh_token);
+        if (p.expires_in) localStorage.setItem("gdrive_expires_at", String(Date.now() + (p.expires_in - 60) * 1000));
+        setShowTokenInput(false);
+      }
+    };
+    window.addEventListener("message", handler);
+    return () => window.removeEventListener("message", handler);
+  }, []);
+
+  const saveToken = (t: string) => {
+    setDriveToken(t);
+    if (typeof window !== "undefined") localStorage.setItem("gdrive_token", t);
+  };
+
+  const refreshDriveToken = async (): Promise<string | null> => {
+    const rtok = typeof window !== "undefined" ? localStorage.getItem("gdrive_refresh") : null;
+    if (!rtok) return null;
+    try {
+      const res = await fetch("/api/google-refresh", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refresh_token: rtok }),
+      });
+      const j = await res.json();
+      if (!res.ok || !j.access_token) return null;
+      saveToken(j.access_token);
+      if (j.expires_in) localStorage.setItem("gdrive_expires_at", String(Date.now() + (j.expires_in - 60) * 1000));
+      return j.access_token as string;
+    } catch {
+      return null;
+    }
+  };
+
+  const ensureDriveToken = async (): Promise<string | null> => {
+    const expiresAt = Number(localStorage.getItem("gdrive_expires_at") || "0");
+    if (driveToken && (!expiresAt || expiresAt > Date.now())) return driveToken;
+    const fresh = await refreshDriveToken();
+    return fresh || driveToken || null;
+  };
+
+  const startOAuth = () => {
+    const clientId = process.env.NEXT_PUBLIC_GOOGLE_OAUTH_CLIENT_ID || "556989179083-lh61c611lk6is35b5lp97amh5v3kp1di.apps.googleusercontent.com";
+    const redirect = `${window.location.origin}/api/google-oauth-callback`;
+    const scope = "https://www.googleapis.com/auth/drive";
+    const url = `https://accounts.google.com/o/oauth2/v2/auth?response_type=code&access_type=offline&prompt=consent&include_granted_scopes=true&client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirect)}&scope=${encodeURIComponent(scope)}`;
+    window.open(url, "gdrive-oauth", "width=520,height=640");
+  };
+
+  const handleOpen = () => {
+    setInput(cardTitle?.trim() || "");
+    setStep("input");
+    setChamados([]);
+    setSelectedOsId(null);
+    setResult(null);
+    setError(null);
+    setOpen(true);
+  };
+
+  const handleSearch = async () => {
+    if (!input.trim()) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/sults-search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ input: input.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      const list: SultsChamado[] = data.chamados || [];
+      if (list.length === 0) {
+        setError("Nenhum chamado encontrado.");
+        return;
+      }
+      if (data.mode === "direct" || list.length === 1) {
+        setSelectedOsId(list[0].id);
+        await handleExtract(list[0].id);
+      } else {
+        setChamados(list);
+        setSelectedOsId(list[0].id);
+        setStep("select");
+      }
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleExtract = async (osId: number) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/sults-extract", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ osId, includeArquivos }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      setResult(data);
+      setSelectedMedia(new Set((data.media || []).map((m: SultsMedia, i: number) => `${m.id}-${i}`)));
+      setStep("result");
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getSelectedMedia = (): SultsMedia[] => {
+    if (!result) return [];
+    return result.media.filter((m, i) => selectedMedia.has(mediaKey(m, i)));
+  };
+
+  const handleStartDriveUpload = async () => {
+    if (!result) return;
+    const code = result.os.codigo || cardTitle?.trim();
+    if (!code) {
+      setError("Código não identificado no chamado");
+      return;
+    }
+    const tok = await ensureDriveToken();
+    if (!tok) {
+      setError("Drive não conectado");
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/drive-find-code-folder", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code, accessToken: tok }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      const candidates: DriveFolderCandidate[] = data.candidates || [];
+      if (candidates.length === 0) {
+        setError(`Nenhuma pasta com nome '${code}' encontrada no Drive.`);
+        return;
+      }
+      setDriveCandidates(candidates);
+      setSelectedDriveFolder(candidates[0].id);
+      setStep("drive-folder");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDoUpload = async () => {
+    if (!result || !selectedDriveFolder) return;
+    const toUpload = getSelectedMedia();
+    if (toUpload.length === 0) {
+      setError("Marque ao menos 1 arquivo");
+      return;
+    }
+    const tok = await ensureDriveToken();
+    if (!tok) {
+      setError("Drive não conectado");
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    setStep("drive-uploading");
+    try {
+      const res = await fetch("/api/drive-upload-pendencias", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          codeFolderId: selectedDriveFolder,
+          media: toUpload.map((m) => ({ id: m.id, nome: m.nome, urlDownload: m.urlDownload })),
+          accessToken: tok,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      setDriveResult(data);
+      setStep("drive-done");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      setStep("drive-folder");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <>
+      <WithHelp help="Abre painel para colar código/link do chamado Sults, extrai fotos e vídeos. Próxima fase: upload Drive em '2. Vistoria / Manutenção/PENDENCIAS'">
+        <button
+          onClick={handleOpen}
+          className="px-6 py-3 rounded-md font-medium transition-colors bg-cyan-600 text-white hover:bg-cyan-700"
+        >
+          Extrair registros
+        </button>
+      </WithHelp>
+
+      {open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setOpen(false)}>
+          <div className="bg-white rounded-lg shadow-xl p-6 w-[640px] max-w-[95vw] max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold text-gray-900">Extrair registros do Sults {cardTitle ? `— ${cardTitle}` : ""}</h3>
+              <button onClick={() => setOpen(false)} className="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
+            </div>
+
+            {step === "input" && (
+              <>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Código ou link do chamado</label>
+                <input
+                  type="text"
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  placeholder="Ex.: BKN0804 ou https://seazone.sults.com.br/chamados/interacoes/17511"
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 mb-3"
+                />
+                <label className="flex items-center gap-2 text-xs text-gray-700 mb-4">
+                  <input type="checkbox" checked={includeArquivos} onChange={(e) => setIncludeArquivos(e.target.checked)} />
+                  Incluir também arquivos (PDFs, docs) além de fotos/vídeos
+                </label>
+                <div className="flex gap-2">
+                  <button onClick={handleSearch} disabled={loading || !input.trim()} className="bg-cyan-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-cyan-700 disabled:opacity-50">
+                    {loading ? "Buscando..." : "Buscar / Extrair"}
+                  </button>
+                  <button onClick={() => setOpen(false)} className="bg-gray-200 text-gray-700 px-4 py-2 rounded-md text-sm font-medium hover:bg-gray-300">
+                    Cancelar
+                  </button>
+                </div>
+              </>
+            )}
+
+            {step === "select" && (
+              <>
+                <div className="text-xs text-gray-600 mb-2">
+                  {chamados.length} chamados encontrados. Selecione (pré-selecionado o mais recente):
+                </div>
+                <div className="border border-gray-200 rounded-md divide-y divide-gray-100 mb-4 max-h-[300px] overflow-y-auto">
+                  {chamados.map((c) => (
+                    <label key={c.id} className="flex items-start gap-2 p-2 hover:bg-gray-50 cursor-pointer text-xs">
+                      <input
+                        type="radio"
+                        name="chamado"
+                        checked={selectedOsId === c.id}
+                        onChange={() => setSelectedOsId(c.id)}
+                        className="mt-1"
+                      />
+                      <div className="flex-1">
+                        <div className="font-medium text-gray-900">{c.titulo}</div>
+                        <div className="text-gray-500">
+                          ID {c.id} · {c.responsavelNome || "—"} · últ. atualização {c.dtUltAlteracao ? new Date(c.dtUltAlteracao).toLocaleString("pt-BR") : "—"}
+                        </div>
+                      </div>
+                      <a href={c.url} target="_blank" rel="noopener" className="text-cyan-600 hover:underline mt-1" onClick={(e) => e.stopPropagation()}>abrir</a>
+                    </label>
+                  ))}
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => selectedOsId && handleExtract(selectedOsId)} disabled={loading || !selectedOsId} className="bg-cyan-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-cyan-700 disabled:opacity-50">
+                    {loading ? "Extraindo..." : "Extrair registros"}
+                  </button>
+                  <button onClick={() => setStep("input")} className="bg-gray-200 text-gray-700 px-4 py-2 rounded-md text-sm font-medium hover:bg-gray-300">
+                    Voltar
+                  </button>
+                </div>
+              </>
+            )}
+
+            {step === "result" && result && (
+              <>
+                <div className="bg-cyan-50 border border-cyan-200 rounded-md p-3 mb-3 text-xs">
+                  <div className="font-medium text-gray-900">{result.os.titulo}</div>
+                  <div className="text-gray-600 mt-1">
+                    Código: <b>{result.os.codigo || "—"}</b> · OS ID: {result.os.id} ·{" "}
+                    <a
+                      href={`https://seazone.sults.com.br/chamados/interacoes/${result.os.id}`}
+                      target="_blank"
+                      rel="noopener"
+                      className="text-cyan-700 hover:underline"
+                    >
+                      abrir no Sults ↗
+                    </a>
+                  </div>
+                  <div className="text-gray-700 mt-1">
+                    {result.total} arquivo(s) — {result.images} foto(s), {result.videos} vídeo(s){result.others > 0 ? `, ${result.others} outros` : ""}
+                  </div>
+                </div>
+                {result.media.length > 0 && (
+                  <div className="flex items-center gap-2 mb-1 text-[11px] text-gray-600">
+                    <input
+                      type="checkbox"
+                      checked={selectedMedia.size === result.media.length}
+                      ref={(el) => { if (el) el.indeterminate = selectedMedia.size > 0 && selectedMedia.size < result.media.length; }}
+                      onChange={(e) => toggleAll(e.target.checked)}
+                    />
+                    <span>Marcar/desmarcar todos ({selectedMedia.size}/{result.media.length})</span>
+                  </div>
+                )}
+                <div className="border border-gray-200 rounded-md max-h-[280px] overflow-y-auto mb-3">
+                  {result.media.length === 0 ? (
+                    <div className="p-4 text-xs text-gray-500">Nenhuma mídia encontrada nesse chamado.</div>
+                  ) : (
+                    <ul className="divide-y divide-gray-100">
+                      {result.media.map((m, idx) => {
+                        const k = mediaKey(m, idx);
+                        return (
+                          <li key={k} className="flex items-center gap-2 p-2 text-xs">
+                            <input
+                              type="checkbox"
+                              checked={selectedMedia.has(k)}
+                              onChange={() => toggleOne(k)}
+                            />
+                            <span className="text-base">{m.isVideo ? "🎥" : m.isImage ? "🖼️" : "📄"}</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (m.isImage || m.isVideo) {
+                                  setPreviewUrl(m.url);
+                                  setPreviewIsVideo(m.isVideo);
+                                } else {
+                                  window.open(m.url, "_blank", "noopener");
+                                }
+                              }}
+                              className="flex-1 truncate text-left text-cyan-700 hover:underline"
+                              title="Visualizar"
+                            >
+                              {m.nome || `arquivo ${m.id}`}
+                            </button>
+                            <a
+                              href={m.urlDownload}
+                              download={m.nome || undefined}
+                              className="px-2 py-1 rounded hover:bg-gray-100 text-gray-600 hover:text-cyan-700"
+                              title="Baixar"
+                            >
+                              ⬇
+                            </a>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </div>
+                {result.media.length > 0 && (
+                  <button
+                    onClick={() => {
+                      for (const m of getSelectedMedia()) {
+                        const a = document.createElement("a");
+                        a.href = m.urlDownload;
+                        a.download = m.nome || "";
+                        a.rel = "noopener";
+                        document.body.appendChild(a);
+                        a.click();
+                        a.remove();
+                      }
+                    }}
+                    disabled={selectedMedia.size === 0}
+                    className="w-full mb-3 bg-gray-100 hover:bg-gray-200 text-gray-800 px-4 py-2 rounded-md text-sm font-medium disabled:opacity-50"
+                  >
+                    ⬇ Baixar selecionados ({selectedMedia.size})
+                  </button>
+                )}
+                <div className="border-t border-gray-200 pt-3 mb-3">
+                  <div className="text-xs font-medium text-gray-700 mb-2">Enviar para o Google Drive</div>
+                  {driveToken ? (
+                    <div className="flex items-center gap-2 mb-2 text-[11px] text-gray-500">
+                      <span className="text-green-600">✓</span> Drive conectado
+                      <button onClick={() => { saveToken(""); setShowTokenInput(true); }} className="underline hover:text-gray-700">trocar token</button>
+                    </div>
+                  ) : null}
+                  {(showTokenInput || !driveToken) && (
+                    <div className="mb-3 p-2 bg-gray-50 border border-gray-200 rounded">
+                      <button
+                        onClick={startOAuth}
+                        className="w-full mb-2 bg-cyan-600 text-white text-xs px-3 py-2 rounded font-medium hover:bg-cyan-700"
+                      >
+                        🔐 Conectar com Google (OAuth)
+                      </button>
+                      <details className="text-[10px] text-gray-500">
+                        <summary className="cursor-pointer">Ou colar access_token manualmente</summary>
+                        <div className="mt-2">
+                          <textarea
+                            value={tokenDraft}
+                            onChange={(e) => setTokenDraft(e.target.value)}
+                            rows={2}
+                            className="w-full text-[10px] border border-gray-300 rounded px-2 py-1 font-mono"
+                            placeholder="ya29...."
+                          />
+                          <div className="flex gap-2 mt-1">
+                            <button onClick={() => { saveToken(tokenDraft.trim()); setTokenDraft(""); setShowTokenInput(false); }} disabled={!tokenDraft.trim()} className="bg-cyan-600 text-white text-xs px-3 py-1 rounded disabled:opacity-50">Salvar</button>
+                            <button onClick={() => { setShowTokenInput(false); setTokenDraft(""); }} className="bg-gray-200 text-xs px-3 py-1 rounded">Cancelar</button>
+                          </div>
+                        </div>
+                      </details>
+                    </div>
+                  )}
+                  <button
+                    onClick={handleStartDriveUpload}
+                    disabled={!driveToken || loading || selectedMedia.size === 0}
+                    className="w-full bg-green-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-green-700 disabled:opacity-50"
+                  >
+                    {loading ? "Buscando pasta..." : `Enviar ${selectedMedia.size} selecionado(s) para Drive (PENDENCIAS)`}
+                  </button>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => setStep("input")} className="bg-gray-200 text-gray-700 px-4 py-2 rounded-md text-sm font-medium hover:bg-gray-300">
+                    Nova busca
+                  </button>
+                  <button onClick={() => setOpen(false)} className="bg-cyan-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-cyan-700">
+                    Fechar
+                  </button>
+                </div>
+              </>
+            )}
+
+            {step === "drive-folder" && (
+              <>
+                <div className="text-xs text-gray-600 mb-2">
+                  {driveCandidates.length} pasta(s) encontrada(s) com nome <b>{result?.os.codigo}</b>. Selecione:
+                </div>
+                <div className="border border-gray-200 rounded-md divide-y divide-gray-100 mb-4 max-h-[300px] overflow-y-auto">
+                  {driveCandidates.map((c) => (
+                    <label key={c.id} className="flex items-start gap-2 p-2 hover:bg-gray-50 cursor-pointer text-xs">
+                      <input type="radio" name="drivefolder" checked={selectedDriveFolder === c.id} onChange={() => setSelectedDriveFolder(c.id)} className="mt-1" />
+                      <div className="flex-1">
+                        <div className="font-medium text-gray-900">{c.name}</div>
+                        <div className="text-gray-500">{c.parentName ? `Em: ${c.parentName}` : "—"}</div>
+                      </div>
+                      <a href={c.url} target="_blank" rel="noopener" className="text-cyan-600 hover:underline mt-1" onClick={(e) => e.stopPropagation()}>abrir</a>
+                    </label>
+                  ))}
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={handleDoUpload} disabled={loading || !selectedDriveFolder} className="bg-green-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-green-700 disabled:opacity-50">
+                    {loading ? "Enviando..." : "Confirmar upload"}
+                  </button>
+                  <button onClick={() => setStep("result")} className="bg-gray-200 text-gray-700 px-4 py-2 rounded-md text-sm font-medium hover:bg-gray-300">Voltar</button>
+                </div>
+              </>
+            )}
+
+            {step === "drive-uploading" && (
+              <div className="p-6 text-center text-sm text-gray-700">
+                ⏳ Enviando {selectedMedia.size} arquivo(s) para o Drive… isso pode levar um tempo dependendo do tamanho.
+              </div>
+            )}
+
+            {step === "drive-done" && driveResult && (
+              <>
+                <div className="bg-green-50 border border-green-200 rounded-md p-3 mb-3 text-xs">
+                  <div className="font-medium text-green-900 mb-1">✓ Upload concluído</div>
+                  <div className="text-gray-700">
+                    {driveResult.createdPendencias ? "📁 Criada pasta PENDENCIAS." : "📁 Usou pasta PENDENCIAS existente."}
+                  </div>
+                  <div className="text-gray-700 mt-1">
+                    <a href={driveResult.pendenciasUrl} target="_blank" rel="noopener" className="text-cyan-700 hover:underline">Abrir PENDENCIAS no Drive ↗</a>
+                  </div>
+                </div>
+                <div className="space-y-2 mb-3 text-xs">
+                  {driveResult.uploaded.length > 0 && (
+                    <div>
+                      <div className="font-medium text-green-800 mb-1">Enviados ({driveResult.uploaded.length})</div>
+                      <ul className="border border-green-200 rounded divide-y divide-green-100">
+                        {driveResult.uploaded.map((u) => <li key={u.id} className="p-1.5 truncate">📤 {u.name}</li>)}
+                      </ul>
+                    </div>
+                  )}
+                  {driveResult.skipped.length > 0 && (
+                    <div>
+                      <div className="font-medium text-gray-700 mb-1">Já existiam (puladas) ({driveResult.skipped.length})</div>
+                      <ul className="border border-gray-200 rounded divide-y divide-gray-100">
+                        {driveResult.skipped.map((n) => <li key={n} className="p-1.5 truncate text-gray-500">⏭ {n}</li>)}
+                      </ul>
+                    </div>
+                  )}
+                  {driveResult.errors.length > 0 && (
+                    <div>
+                      <div className="font-medium text-red-700 mb-1">Erros ({driveResult.errors.length})</div>
+                      <ul className="border border-red-200 rounded divide-y divide-red-100">
+                        {driveResult.errors.map((e) => <li key={e.name} className="p-1.5 text-red-700">❌ {e.name}: {e.error}</li>)}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => setStep("input")} className="bg-gray-200 text-gray-700 px-4 py-2 rounded-md text-sm font-medium hover:bg-gray-300">Nova busca</button>
+                  <button onClick={() => setOpen(false)} className="bg-cyan-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-cyan-700">Fechar</button>
+                </div>
+              </>
+            )}
+
+            {error && <div className="mt-3 text-xs text-red-600 bg-red-50 border border-red-200 rounded p-2">❌ {error}</div>}
+          </div>
+        </div>
+      )}
+
+      {previewUrl && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/85"
+          onClick={() => setPreviewUrl(null)}
+        >
+          <button
+            onClick={(e) => { e.stopPropagation(); setPreviewUrl(null); }}
+            className="absolute top-4 right-4 text-white text-3xl hover:text-gray-300"
+            title="Fechar (Esc)"
+          >
+            &times;
+          </button>
+          {previewIsVideo ? (
+            <video
+              src={previewUrl}
+              controls
+              autoPlay
+              className="max-w-[92vw] max-h-[92vh] rounded shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            />
+          ) : (
+            <img
+              src={previewUrl}
+              alt=""
+              className="max-w-[92vw] max-h-[92vh] rounded shadow-2xl object-contain"
+              onClick={(e) => e.stopPropagation()}
+            />
+          )}
+        </div>
+      )}
+    </>
+  );
+}
+
 function TabUpdateCards({ apiRoute, phaseName, phaseDescription, showCopyButton }: { apiRoute: string; phaseName: string; phaseDescription: string; showCopyButton?: boolean }) {
   const [cards, setCards] = useState<UpdateCardInfo[]>([]);
   const [results, setResults] = useState<UpdateResult[]>([]);
@@ -1836,6 +2457,9 @@ function TabUpdateCards({ apiRoute, phaseName, phaseDescription, showCopyButton 
                         <CopyScriptUnicoItem />
                         <CopyScriptPendencias cardTitle={c.title} lastComment={c.lastComment} />
                         <CopyScriptSoEnxoval cardTitle={c.title} />
+                      </div>
+                      <div className="flex gap-2 mt-2">
+                        <ExtrairRegistrosSults cardTitle={c.title} />
                       </div>
                     </div>
                   </div>
