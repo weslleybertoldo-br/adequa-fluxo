@@ -2458,9 +2458,11 @@ function TabUpdateCards({ apiRoute, phaseName, phaseDescription, showCopyButton 
                         <CopyScriptPendencias cardTitle={c.title} lastComment={c.lastComment} />
                         <CopyScriptSoEnxoval cardTitle={c.title} />
                       </div>
-                      <div className="flex gap-2 mt-2">
-                        <ExtrairRegistrosSults cardTitle={c.title} />
-                      </div>
+                      {process.env.NODE_ENV !== "production" && (
+                        <div className="flex gap-2 mt-2">
+                          <ExtrairRegistrosSults cardTitle={c.title} />
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
