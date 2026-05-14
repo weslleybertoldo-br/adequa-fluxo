@@ -3466,7 +3466,7 @@ function FormOcorrenciaDireta({
                 <pre className="bg-gray-900 text-green-300 text-[10px] p-2 rounded overflow-x-auto select-all">{`(()=>{const e=Object.entries(localStorage).find(([k])=>k.includes('supabase')||k.startsWith('sb-'));if(!e)return'sem auth';const v=e[1].startsWith('base64-')?atob(e[1].slice(7)):e[1];const j=JSON.parse(v);console.log('access_token:',j.access_token);console.log('refresh_token:',j.refresh_token);copy(j.refresh_token);return'refresh_token copiado'})()`}</pre>
                 <textarea value={tokenAccessInput} onChange={(e) => setTokenAccessInput(e.target.value)} placeholder="access_token (eyJhbGc...) ou JSON inteiro — opcional se preencher refresh_token" rows={3} className="w-full border border-current rounded px-2 py-1 text-[10px] font-mono bg-white text-gray-900" />
                 <input type="text" value={tokenRefreshInput} onChange={(e) => setTokenRefreshInput(e.target.value)} placeholder="refresh_token (basta este — gera o access via Supabase)" className="w-full border border-current rounded px-2 py-1 text-[10px] font-mono bg-white text-gray-900" />
-                <button onClick={salvarToken} disabled={!tokenAccessInput.trim() && !tokenRefreshInput.trim()} className="bg-current text-white px-3 py-1.5 rounded text-[11px] font-medium disabled:opacity-50">Salvar Token</button>
+                <button onClick={salvarToken} disabled={!tokenAccessInput.trim() && !tokenRefreshInput.trim()} className="bg-purple-600 text-white px-3 py-1.5 rounded text-[11px] font-medium hover:bg-purple-700 disabled:opacity-50">Salvar Token</button>
               </div>
             )}
           </div>
