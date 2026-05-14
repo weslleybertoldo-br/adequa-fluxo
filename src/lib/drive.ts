@@ -20,12 +20,19 @@ async function api(path: string, token: string, init?: RequestInit): Promise<Res
 }
 
 export async function searchFolderByName(token: string, name: string): Promise<DriveFolder[]> {
-  const q = `name = '${name.replace(/'/g, "\\'")}' and mimeType = '${FOLDER_MIME}' and trashed = false`;
-  const url = `/files?q=${encodeURIComponent(q)}&fields=files(id,name,parents)&${commonParams()}&pageSize=20`;
-  const res = await api(url, token);
-  if (!res.ok) throw new Error(`Drive search HTTP ${res.status}: ${await res.text()}`);
-  const j = (await res.json()) as { files?: DriveFolder[] };
-  return j.files || [];
+  const safe = name.replace(/'/g, "\\'");
+  const queries = [
+    `name = '${safe}' and mimeType = '${FOLDER_MIME}' and trashed = false`,
+    `name contains '${safe}' and mimeType = '${FOLDER_MIME}' and trashed = false`,
+  ];
+  for (const q of queries) {
+    const url = `/files?q=${encodeURIComponent(q)}&fields=files(id,name,parents)&${commonParams()}&pageSize=20`;
+    const res = await api(url, token);
+    if (!res.ok) throw new Error(`Drive search HTTP ${res.status}: ${await res.text()}`);
+    const j = (await res.json()) as { files?: DriveFolder[] };
+    if (j.files && j.files.length > 0) return j.files;
+  }
+  return [];
 }
 
 export async function getFolder(token: string, id: string): Promise<DriveFolder> {

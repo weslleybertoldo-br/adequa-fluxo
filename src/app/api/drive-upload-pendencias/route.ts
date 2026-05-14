@@ -16,10 +16,11 @@ export async function POST(request: NextRequest) {
   if (!requireAuth(authToken)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   try {
-    const { codeFolderId, media, accessToken } = (await request.json()) as {
+    const { codeFolderId, media, accessToken, forceWithSuffix } = (await request.json()) as {
       codeFolderId?: string;
       media?: MediaItem[];
       accessToken?: string;
+      forceWithSuffix?: boolean;
     };
     if (!codeFolderId || !Array.isArray(media) || !accessToken) {
       return NextResponse.json({ error: "codeFolderId, media[] e accessToken obrigatórios" }, { status: 400 });
@@ -47,15 +48,26 @@ export async function POST(request: NextRequest) {
     const skipped: string[] = [];
     const errors: { name: string; error: string }[] = [];
 
+    const randomSuffix = () => Math.random().toString(36).slice(2, 7);
+    const addSuffix = (name: string): string => {
+      const dot = name.lastIndexOf(".");
+      const base = dot > 0 ? name.slice(0, dot) : name;
+      const ext = dot > 0 ? name.slice(dot) : "";
+      return `${base}-${randomSuffix()}${ext}`;
+    };
+
     for (const m of media) {
-      const name = m.nome || `arquivo-${m.id}`;
-      if (existingNames.has(name)) {
-        skipped.push(name);
+      const original = m.nome || `arquivo-${m.id}`;
+      const isDup = existingNames.has(original);
+      if (isDup && !forceWithSuffix) {
+        skipped.push(original);
         continue;
       }
+      const name = isDup ? addSuffix(original) : original;
       try {
         const f = await uploadFromUrl(accessToken, pendencias.id, name, m.urlDownload);
         uploaded.push({ name: f.name, id: f.id });
+        existingNames.add(f.name);
       } catch (e) {
         errors.push({ name, error: (e as Error).message });
       }

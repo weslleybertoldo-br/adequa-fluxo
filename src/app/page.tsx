@@ -733,6 +733,15 @@ function CopyCobrancaButtons({ cardTitle, lastComment }: { cardTitle: string; la
   const franquiaRef = useRef<string>("");
   const fetchedRef = useRef(false);
 
+  useEffect(() => {
+    if (!cardTitle || fetchedRef.current) return;
+    fetchedRef.current = true;
+    fetch(`/api/get-franqueado?code=${encodeURIComponent(cardTitle.trim())}`)
+      .then((r) => r.json())
+      .then((d) => { franquiaRef.current = d.franqueado || ""; })
+      .catch(() => { /* silencioso */ });
+  }, [cardTitle]);
+
   const getGreeting = () => {
     const hours = new Date().toLocaleString("en-US", { timeZone: "America/Sao_Paulo", hour: "numeric", hour12: false });
     const h = parseInt(hours);
@@ -1243,6 +1252,8 @@ type SultsMedia = {
   isImage: boolean;
   isVideo: boolean;
   interacaoId: number | null;
+  dtRastreio: string | null;
+  pessoaNome: string | null;
 };
 
 type SultsExtractResult = {
@@ -1281,10 +1292,41 @@ function ExtrairRegistrosSults({ cardTitle }: { cardTitle?: string }) {
   const [selectedDriveFolder, setSelectedDriveFolder] = useState<string | null>(null);
   const [driveResult, setDriveResult] = useState<DriveUploadResult | null>(null);
   const [selectedMedia, setSelectedMedia] = useState<Set<string>>(new Set());
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [previewIsVideo, setPreviewIsVideo] = useState(false);
+  const [previewIdx, setPreviewIdx] = useState<number | null>(null);
+  const [upJob, setUpJob] = useState<null | {
+    total: number;
+    current: number;
+    currentName: string;
+    pendenciasUrl: string;
+    createdPendencias: boolean;
+    uploaded: { name: string }[];
+    skipped: string[];
+    errors: { name: string; error: string }[];
+    done: boolean;
+  }>(null);
+  const upCancelRef = useRef(false);
 
   const mediaKey = (m: SultsMedia, idx: number) => `${m.id}-${idx}`;
+
+  const previewable = (result?.media || []).map((m, idx) => ({ m, idx })).filter((x) => x.m.isImage || x.m.isVideo);
+  const previewPos = previewIdx === null ? -1 : previewable.findIndex((x) => x.idx === previewIdx);
+  const previewCur = previewPos >= 0 ? previewable[previewPos].m : null;
+  const goPreview = (delta: number) => {
+    if (previewPos < 0) return;
+    const next = (previewPos + delta + previewable.length) % previewable.length;
+    setPreviewIdx(previewable[next].idx);
+  };
+
+  useEffect(() => {
+    if (previewIdx === null) return;
+    const h = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setPreviewIdx(null);
+      else if (e.key === "ArrowRight") goPreview(1);
+      else if (e.key === "ArrowLeft") goPreview(-1);
+    };
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  });
   const toggleAll = (checked: boolean) => {
     if (!result) return;
     setSelectedMedia(checked ? new Set(result.media.map((m, i) => mediaKey(m, i))) : new Set());
@@ -1467,11 +1509,25 @@ function ExtrairRegistrosSults({ cardTitle }: { cardTitle?: string }) {
     }
   };
 
-  const handleDoUpload = async () => {
+  const randomSuffix = () => Math.random().toString(36).slice(2, 7);
+  const nameWithSuffix = (name: string): string => {
+    const dot = name.lastIndexOf(".");
+    const base = dot > 0 ? name.slice(0, dot) : name;
+    const ext = dot > 0 ? name.slice(dot) : "";
+    return `${base}-${randomSuffix()}${ext}`;
+  };
+
+  const handleDoUpload = async (opts?: { onlySkippedWithSuffix?: boolean }) => {
     if (!result || !selectedDriveFolder) return;
-    const toUpload = getSelectedMedia();
+    let toUpload: SultsMedia[];
+    if (opts?.onlySkippedWithSuffix && upJob) {
+      const skippedSet = new Set(upJob.skipped);
+      toUpload = result.media.filter((m) => skippedSet.has(m.nome || `arquivo-${m.id}`));
+    } else {
+      toUpload = getSelectedMedia();
+    }
     if (toUpload.length === 0) {
-      setError("Marque ao menos 1 arquivo");
+      setError("Nada a enviar");
       return;
     }
     const tok = await ensureDriveToken();
@@ -1479,29 +1535,75 @@ function ExtrairRegistrosSults({ cardTitle }: { cardTitle?: string }) {
       setError("Drive não conectado");
       return;
     }
-    setLoading(true);
+
     setError(null);
-    setStep("drive-uploading");
+    setLoading(true);
+    upCancelRef.current = false;
+
+    let pendenciasFolderId = "";
+    let pendenciasUrl = "";
+    let createdPendencias = false;
+    let existingNames = new Set<string>();
     try {
-      const res = await fetch("/api/drive-upload-pendencias", {
+      const prep = await fetch("/api/drive-prepare-pendencias", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          codeFolderId: selectedDriveFolder,
-          media: toUpload.map((m) => ({ id: m.id, nome: m.nome, urlDownload: m.urlDownload })),
-          accessToken: tok,
-        }),
+        body: JSON.stringify({ codeFolderId: selectedDriveFolder, accessToken: tok }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
-      setDriveResult(data);
-      setStep("drive-done");
+      const pj = await prep.json();
+      if (!prep.ok) throw new Error(pj.error || `HTTP ${prep.status}`);
+      pendenciasFolderId = pj.pendenciasFolderId;
+      pendenciasUrl = pj.pendenciasUrl;
+      createdPendencias = pj.createdPendencias;
+      existingNames = new Set<string>(pj.existingNames || []);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
-      setStep("drive-folder");
-    } finally {
       setLoading(false);
+      return;
     }
+
+    setUpJob({
+      total: toUpload.length,
+      current: 0,
+      currentName: "",
+      pendenciasUrl,
+      createdPendencias,
+      uploaded: [],
+      skipped: [],
+      errors: [],
+      done: false,
+    });
+    setOpen(false);
+
+    const force = !!opts?.onlySkippedWithSuffix;
+    for (let i = 0; i < toUpload.length; i++) {
+      if (upCancelRef.current) break;
+      const m = toUpload[i];
+      const original = m.nome || `arquivo-${m.id}`;
+      const isDup = existingNames.has(original);
+      setUpJob((prev) => prev ? { ...prev, current: i + 1, currentName: original } : prev);
+      if (isDup && !force) {
+        setUpJob((prev) => prev ? { ...prev, skipped: [...prev.skipped, original] } : prev);
+        continue;
+      }
+      const name = isDup && force ? nameWithSuffix(original) : original;
+      try {
+        const tok2 = await ensureDriveToken();
+        const r = await fetch("/api/drive-upload-one", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ pendenciasFolderId, name, urlDownload: m.urlDownload, accessToken: tok2 }),
+        });
+        const rj = await r.json();
+        if (!r.ok) throw new Error(rj.error || `HTTP ${r.status}`);
+        existingNames.add(rj.name);
+        setUpJob((prev) => prev ? { ...prev, uploaded: [...prev.uploaded, { name: rj.name }] } : prev);
+      } catch (e) {
+        setUpJob((prev) => prev ? { ...prev, errors: [...prev.errors, { name, error: e instanceof Error ? e.message : String(e) }] } : prev);
+      }
+    }
+    setUpJob((prev) => prev ? { ...prev, done: true, currentName: "" } : prev);
+    setLoading(false);
   };
 
   return (
@@ -1516,8 +1618,8 @@ function ExtrairRegistrosSults({ cardTitle }: { cardTitle?: string }) {
       </WithHelp>
 
       {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setOpen(false)}>
-          <div className="bg-white rounded-lg shadow-xl p-6 w-[640px] max-w-[95vw] max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed top-4 left-4 bottom-4 z-[55] w-[560px] max-w-[45vw] pointer-events-none">
+          <div className="bg-white rounded-lg shadow-2xl border border-gray-200 p-6 h-full overflow-y-auto pointer-events-auto">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-semibold text-gray-900">Extrair registros do Sults {cardTitle ? `— ${cardTitle}` : ""}</h3>
               <button onClick={() => setOpen(false)} className="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
@@ -1633,8 +1735,7 @@ function ExtrairRegistrosSults({ cardTitle }: { cardTitle?: string }) {
                               type="button"
                               onClick={() => {
                                 if (m.isImage || m.isVideo) {
-                                  setPreviewUrl(m.url);
-                                  setPreviewIsVideo(m.isVideo);
+                                  setPreviewIdx(idx);
                                 } else {
                                   window.open(m.url, "_blank", "noopener");
                                 }
@@ -1644,6 +1745,22 @@ function ExtrairRegistrosSults({ cardTitle }: { cardTitle?: string }) {
                             >
                               {m.nome || `arquivo ${m.id}`}
                             </button>
+                            {(m.dtRastreio || m.pessoaNome) && (
+                              <span className="text-[10px] text-gray-500 whitespace-nowrap">
+                                {m.pessoaNome ? m.pessoaNome.split(/\s+/).slice(0, 2).join(" ") : ""}
+                                {m.pessoaNome && m.dtRastreio ? " · " : ""}
+                                {m.dtRastreio
+                                  ? (() => {
+                                      const d = new Date(m.dtRastreio);
+                                      const dd = String(d.getDate()).padStart(2, "0");
+                                      const mm = String(d.getMonth() + 1).padStart(2, "0");
+                                      const hh = String(d.getHours()).padStart(2, "0");
+                                      const mi = String(d.getMinutes()).padStart(2, "0");
+                                      return `${dd}/${mm} às ${hh}:${mi}`;
+                                    })()
+                                  : ""}
+                              </span>
+                            )}
                             <a
                               href={m.urlDownload}
                               download={m.nome || undefined}
@@ -1748,18 +1865,12 @@ function ExtrairRegistrosSults({ cardTitle }: { cardTitle?: string }) {
                   ))}
                 </div>
                 <div className="flex gap-2">
-                  <button onClick={handleDoUpload} disabled={loading || !selectedDriveFolder} className="bg-green-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-green-700 disabled:opacity-50">
+                  <button onClick={() => handleDoUpload()} disabled={loading || !selectedDriveFolder} className="bg-green-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-green-700 disabled:opacity-50">
                     {loading ? "Enviando..." : "Confirmar upload"}
                   </button>
                   <button onClick={() => setStep("result")} className="bg-gray-200 text-gray-700 px-4 py-2 rounded-md text-sm font-medium hover:bg-gray-300">Voltar</button>
                 </div>
               </>
-            )}
-
-            {step === "drive-uploading" && (
-              <div className="p-6 text-center text-sm text-gray-700">
-                ⏳ Enviando {selectedMedia.size} arquivo(s) para o Drive… isso pode levar um tempo dependendo do tamanho.
-              </div>
             )}
 
             {step === "drive-done" && driveResult && (
@@ -1785,9 +1896,19 @@ function ExtrairRegistrosSults({ cardTitle }: { cardTitle?: string }) {
                   {driveResult.skipped.length > 0 && (
                     <div>
                       <div className="font-medium text-gray-700 mb-1">Já existiam (puladas) ({driveResult.skipped.length})</div>
-                      <ul className="border border-gray-200 rounded divide-y divide-gray-100">
+                      <ul className="border border-gray-200 rounded divide-y divide-gray-100 mb-2">
                         {driveResult.skipped.map((n) => <li key={n} className="p-1.5 truncate text-gray-500">⏭ {n}</li>)}
                       </ul>
+                      <div className="bg-yellow-50 border border-yellow-200 rounded p-2 text-[11px]">
+                        <div className="text-yellow-900 mb-1.5">As fotos acima já estão no Drive. Quer adicionar mesmo assim (com sufixo aleatório no nome)?</div>
+                        <button
+                          onClick={() => handleDoUpload({ onlySkippedWithSuffix: true })}
+                          disabled={loading}
+                          className="bg-yellow-600 text-white px-3 py-1 rounded text-xs font-medium hover:bg-yellow-700 disabled:opacity-50"
+                        >
+                          ✅ Sim, adicionar com sufixo
+                        </button>
+                      </div>
                     </div>
                   )}
                   {driveResult.errors.length > 0 && (
@@ -1811,21 +1932,111 @@ function ExtrairRegistrosSults({ cardTitle }: { cardTitle?: string }) {
         </div>
       )}
 
-      {previewUrl && (
+      {upJob && (
+        <div className="fixed bottom-4 left-4 z-[60] w-[420px] max-w-[90vw] bg-white rounded-lg shadow-2xl border border-gray-200 text-xs">
+          <div className="flex items-center justify-between p-3 border-b border-gray-200">
+            <div className="font-semibold text-gray-900">
+              {upJob.done ? "✓ Upload concluído" : "⏳ Enviando para PENDENCIAS"}
+            </div>
+            <button
+              onClick={() => { upCancelRef.current = true; if (upJob.done) setUpJob(null); }}
+              className="text-gray-400 hover:text-gray-700 text-lg"
+              title={upJob.done ? "Fechar" : "Cancelar e fechar"}
+            >
+              &times;
+            </button>
+          </div>
+          <div className="p-3">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-gray-600">{upJob.current}/{upJob.total}</span>
+              <span className="text-gray-500 truncate ml-2 max-w-[250px]">{upJob.currentName}</span>
+            </div>
+            <div className="w-full h-2 bg-gray-100 rounded overflow-hidden mb-3">
+              <div
+                className={`h-full transition-all ${upJob.done ? "bg-green-500" : "bg-cyan-500"}`}
+                style={{ width: `${upJob.total > 0 ? (upJob.current / upJob.total) * 100 : 0}%` }}
+              />
+            </div>
+            {upJob.done && (
+              <div className="text-gray-700 mb-2">
+                {upJob.createdPendencias ? "📁 Criada PENDENCIAS." : "📁 Usou PENDENCIAS existente."}{" "}
+                <a href={upJob.pendenciasUrl} target="_blank" rel="noopener" className="text-cyan-700 hover:underline">abrir ↗</a>
+              </div>
+            )}
+            {upJob.uploaded.length > 0 && (
+              <details className="mb-2" open>
+                <summary className="cursor-pointer font-medium text-green-700">Enviados ({upJob.uploaded.length})</summary>
+                <ul className="mt-1 max-h-[140px] overflow-y-auto border border-green-100 rounded">
+                  {upJob.uploaded.map((u, i) => <li key={`up-${i}`} className="p-1 truncate">📤 {u.name}</li>)}
+                </ul>
+              </details>
+            )}
+            {upJob.skipped.length > 0 && (
+              <details className="mb-2" open>
+                <summary className="cursor-pointer font-medium text-gray-700">Já existiam ({upJob.skipped.length})</summary>
+                <ul className="mt-1 max-h-[120px] overflow-y-auto border border-gray-200 rounded">
+                  {upJob.skipped.map((n) => <li key={n} className="p-1 truncate text-gray-500">⏭ {n}</li>)}
+                </ul>
+                {upJob.done && (
+                  <button
+                    onClick={() => handleDoUpload({ onlySkippedWithSuffix: true })}
+                    disabled={loading}
+                    className="mt-1 bg-yellow-600 text-white px-2 py-1 rounded text-[11px] hover:bg-yellow-700 disabled:opacity-50"
+                  >
+                    ✅ Adicionar com sufixo
+                  </button>
+                )}
+              </details>
+            )}
+            {upJob.errors.length > 0 && (
+              <details className="mb-2" open>
+                <summary className="cursor-pointer font-medium text-red-700">Erros ({upJob.errors.length})</summary>
+                <ul className="mt-1 max-h-[120px] overflow-y-auto border border-red-200 rounded">
+                  {upJob.errors.map((e, i) => <li key={`err-${i}`} className="p-1 text-red-700">❌ {e.name}: {e.error}</li>)}
+                </ul>
+              </details>
+            )}
+          </div>
+        </div>
+      )}
+
+      {previewCur && (
         <div
           className="fixed inset-0 z-[60] flex items-center justify-center bg-black/85"
-          onClick={() => setPreviewUrl(null)}
+          onClick={() => setPreviewIdx(null)}
         >
           <button
-            onClick={(e) => { e.stopPropagation(); setPreviewUrl(null); }}
+            onClick={(e) => { e.stopPropagation(); setPreviewIdx(null); }}
             className="absolute top-4 right-4 text-white text-3xl hover:text-gray-300"
             title="Fechar (Esc)"
           >
             &times;
           </button>
-          {previewIsVideo ? (
+          {previewable.length > 1 && (
+            <>
+              <button
+                onClick={(e) => { e.stopPropagation(); goPreview(-1); }}
+                className="absolute left-4 top-1/2 -translate-y-1/2 bg-white/10 hover:bg-white/25 text-white text-4xl px-3 py-2 rounded-full"
+                title="Anterior (←)"
+              >
+                ‹
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); goPreview(1); }}
+                className="absolute right-4 top-1/2 -translate-y-1/2 bg-white/10 hover:bg-white/25 text-white text-4xl px-3 py-2 rounded-full"
+                title="Próxima (→)"
+              >
+                ›
+              </button>
+              <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-white/80 text-xs bg-black/40 px-3 py-1 rounded">
+                {previewPos + 1} / {previewable.length}
+              </div>
+            </>
+          )}
+          {previewCur.isVideo ? (
             <video
-              src={previewUrl}
+              key={previewCur.url}
+              src={previewCur.url}
               controls
               autoPlay
               className="max-w-[92vw] max-h-[92vh] rounded shadow-2xl"
@@ -1833,7 +2044,8 @@ function ExtrairRegistrosSults({ cardTitle }: { cardTitle?: string }) {
             />
           ) : (
             <img
-              src={previewUrl}
+              key={previewCur.url}
+              src={previewCur.url}
               alt=""
               className="max-w-[92vw] max-h-[92vh] rounded shadow-2xl object-contain"
               onClick={(e) => e.stopPropagation()}
@@ -2645,6 +2857,11 @@ function Phase5EditButton({ cardId, cardTitle, lastComment }: { cardId: string; 
                 </button>
               </WithHelp>
             </div>
+            {process.env.NODE_ENV !== "production" && (
+              <div className="mt-3 pt-3 border-t border-gray-200">
+                <ExtrairRegistrosSults cardTitle={cardTitle} />
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -3468,6 +3685,11 @@ function TabRevisao() {
                             </button>
                           </WithHelp>
                         </div>
+                        {process.env.NODE_ENV !== "production" && (
+                          <div className="mt-3 pt-3 border-t border-gray-200">
+                            <ExtrairRegistrosSults cardTitle={c.title} />
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}

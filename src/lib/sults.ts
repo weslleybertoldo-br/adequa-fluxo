@@ -133,6 +133,8 @@ export type MediaItem = {
   isImage: boolean;
   isVideo: boolean;
   interacaoId: number | null;
+  dtRastreio: string | null;
+  pessoaNome: string | null;
 };
 
 const IMAGE_EXT = /\.(jpe?g|png|webp|gif|heic|heif|bmp)(\?|$)/i;
@@ -155,7 +157,7 @@ export async function getChamadoMedia(osId: number): Promise<{
   );
   if (!res.ok) throw new Error(`Sults interacao falhou: HTTP ${res.status}`);
   const json = (await res.json()) as {
-    interacao?: Array<{ interacao?: { id?: number; imgArr?: unknown[]; arquivoArr?: unknown[] } }>;
+    interacao?: Array<{ dtRastreio?: string; pessoa?: { nome?: string }; interacao?: { id?: number; imgArr?: unknown[]; arquivoArr?: unknown[] } }>;
     os?: { id?: number; titulo?: string };
   };
 
@@ -166,6 +168,8 @@ export async function getChamadoMedia(osId: number): Promise<{
     const it = wrapper.interacao;
     if (!it) continue;
     const interacaoId = typeof it.id === "number" ? it.id : null;
+    const dtRastreio = wrapper.dtRastreio || null;
+    const pessoaNome = wrapper.pessoa?.nome || null;
 
     for (const arr of [it.imgArr, it.arquivoArr]) {
       if (!Array.isArray(arr)) continue;
@@ -183,6 +187,8 @@ export async function getChamadoMedia(osId: number): Promise<{
           isImage: c.isImage,
           isVideo: c.isVideo,
           interacaoId,
+          dtRastreio,
+          pessoaNome,
         });
       }
     }
