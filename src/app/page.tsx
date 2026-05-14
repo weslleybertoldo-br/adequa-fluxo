@@ -757,9 +757,16 @@ function CopyCobrancaButtons({ cardTitle, lastComment }: { cardTitle: string; la
       const greeting = getGreeting();
       const sections = parsePendingSectionsFromComment(lastComment);
 
+      const totalPendingItems = sections.reduce((acc, s) => acc + s.items.length, 0);
+      const isSingular = totalPendingItems <= 1;
+
       const messageIntro = type === "first"
-        ? "Temos atualizações sobre os registros pendentes?"
-        : "Consegue nos ajudar com as adequações pendentes?";
+        ? (isSingular
+            ? "Temos atualizações sobre o registro pendente?"
+            : "Temos atualizações sobre os registros pendentes?")
+        : (isSingular
+            ? "Consegue nos ajudar com a adequação pendente?"
+            : "Consegue nos ajudar com as adequações pendentes?");
 
       let sectionsPlain = "";
       let sectionsHtml = "";
