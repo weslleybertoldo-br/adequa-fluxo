@@ -1214,7 +1214,27 @@ function CopyScriptSoEnxoval({ cardTitle }: { cardTitle?: string }) {
       const html = `<p>${greeting} ${firstName} :D</p><br><br><p>Ficamos pendentes somente o enxoval desse imóvel.</p>`;
       const blob = new Blob([html], { type: "text/html" });
       const blobText = new Blob([plainText], { type: "text/plain" });
-      await navigator.clipboard.write([new ClipboardItem({ "text/html": blob, "text/plain": blobText })]);
+      const tryWrite = async () => {
+        if (!document.hasFocus()) window.focus();
+        await navigator.clipboard.write([new ClipboardItem({ "text/html": blob, "text/plain": blobText })]);
+      };
+      try {
+        await tryWrite();
+      } catch {
+        const ta = document.createElement("div");
+        ta.contentEditable = "true";
+        ta.innerHTML = html;
+        ta.style.cssText = "position:fixed;left:-9999px;top:0;opacity:0";
+        document.body.appendChild(ta);
+        const range = document.createRange();
+        range.selectNodeContents(ta);
+        const sel = window.getSelection();
+        sel?.removeAllRanges();
+        sel?.addRange(range);
+        document.execCommand("copy");
+        sel?.removeAllRanges();
+        ta.remove();
+      }
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } finally {
@@ -1293,6 +1313,8 @@ function ExtrairRegistrosSults({ cardTitle }: { cardTitle?: string }) {
   const [driveResult, setDriveResult] = useState<DriveUploadResult | null>(null);
   const [selectedMedia, setSelectedMedia] = useState<Set<string>>(new Set());
   const [previewIdx, setPreviewIdx] = useState<number | null>(null);
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
   const [upJob, setUpJob] = useState<null | {
     total: number;
     current: number;
@@ -1327,6 +1349,11 @@ function ExtrairRegistrosSults({ cardTitle }: { cardTitle?: string }) {
     window.addEventListener("keydown", h);
     return () => window.removeEventListener("keydown", h);
   });
+
+  useEffect(() => {
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+  }, [previewIdx]);
   const toggleAll = (checked: boolean) => {
     if (!result) return;
     setSelectedMedia(checked ? new Set(result.media.map((m, i) => mediaKey(m, i))) : new Set());
@@ -1389,11 +1416,15 @@ function ExtrairRegistrosSults({ cardTitle }: { cardTitle?: string }) {
     }
   };
 
-  const ensureDriveToken = async (): Promise<string | null> => {
+  const ensureDriveToken = async (forceRefresh = false): Promise<string | null> => {
     const expiresAt = Number(localStorage.getItem("gdrive_expires_at") || "0");
-    if (driveToken && (!expiresAt || expiresAt > Date.now())) return driveToken;
-    const fresh = await refreshDriveToken();
-    return fresh || driveToken || null;
+    const hasRefresh = typeof window !== "undefined" && !!localStorage.getItem("gdrive_refresh");
+    if (!forceRefresh && driveToken && expiresAt && expiresAt > Date.now()) return driveToken;
+    if (hasRefresh) {
+      const fresh = await refreshDriveToken();
+      if (fresh) return fresh;
+    }
+    return driveToken || null;
   };
 
   const startOAuth = () => {
@@ -1479,7 +1510,7 @@ function ExtrairRegistrosSults({ cardTitle }: { cardTitle?: string }) {
       setError("Código não identificado no chamado");
       return;
     }
-    const tok = await ensureDriveToken();
+    let tok = await ensureDriveToken();
     if (!tok) {
       setError("Drive não conectado");
       return;
@@ -1487,11 +1518,22 @@ function ExtrairRegistrosSults({ cardTitle }: { cardTitle?: string }) {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/drive-find-code-folder", {
+      let res = await fetch("/api/drive-find-code-folder", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ code, accessToken: tok }),
       });
+      if (res.status === 500 || res.status === 401) {
+        const refreshed = await ensureDriveToken(true);
+        if (refreshed && refreshed !== tok) {
+          tok = refreshed;
+          res = await fetch("/api/drive-find-code-folder", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ code, accessToken: tok }),
+          });
+        }
+      }
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
       const candidates: DriveFolderCandidate[] = data.candidates || [];
@@ -1588,12 +1630,23 @@ function ExtrairRegistrosSults({ cardTitle }: { cardTitle?: string }) {
       }
       const name = isDup && force ? nameWithSuffix(original) : original;
       try {
-        const tok2 = await ensureDriveToken();
-        const r = await fetch("/api/drive-upload-one", {
+        let tok2 = await ensureDriveToken();
+        let r = await fetch("/api/drive-upload-one", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ pendenciasFolderId, name, urlDownload: m.urlDownload, accessToken: tok2 }),
         });
+        if (r.status === 401 || r.status === 500) {
+          const refreshed = await ensureDriveToken(true);
+          if (refreshed && refreshed !== tok2) {
+            tok2 = refreshed;
+            r = await fetch("/api/drive-upload-one", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ pendenciasFolderId, name, urlDownload: m.urlDownload, accessToken: tok2 }),
+            });
+          }
+        }
         const rj = await r.json();
         if (!r.ok) throw new Error(rj.error || `HTTP ${r.status}`);
         existingNames.add(rj.name);
@@ -2001,56 +2054,88 @@ function ExtrairRegistrosSults({ cardTitle }: { cardTitle?: string }) {
       )}
 
       {previewCur && (
-        <div
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/85"
-          onClick={() => setPreviewIdx(null)}
-        >
-          <button
-            onClick={(e) => { e.stopPropagation(); setPreviewIdx(null); }}
-            className="absolute top-4 right-4 text-white text-3xl hover:text-gray-300"
-            title="Fechar (Esc)"
-          >
-            &times;
-          </button>
-          {previewable.length > 1 && (
-            <>
-              <button
-                onClick={(e) => { e.stopPropagation(); goPreview(-1); }}
-                className="absolute left-4 top-1/2 -translate-y-1/2 bg-white/10 hover:bg-white/25 text-white text-4xl px-3 py-2 rounded-full"
-                title="Anterior (←)"
-              >
-                ‹
-              </button>
-              <button
-                onClick={(e) => { e.stopPropagation(); goPreview(1); }}
-                className="absolute right-4 top-1/2 -translate-y-1/2 bg-white/10 hover:bg-white/25 text-white text-4xl px-3 py-2 rounded-full"
-                title="Próxima (→)"
-              >
-                ›
-              </button>
-              <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-white/80 text-xs bg-black/40 px-3 py-1 rounded">
-                {previewPos + 1} / {previewable.length}
+        <div className="fixed top-4 bottom-4 left-4 z-[60] w-[560px] max-w-[45vw] pointer-events-none">
+          <div
+            className="relative bg-gray-900 rounded-lg shadow-2xl border border-gray-700 h-full flex items-center justify-center pointer-events-auto overflow-hidden"
+            onWheel={(e) => {
+              e.preventDefault();
+              const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+              setZoom((z) => {
+                const next = Math.min(8, Math.max(1, z * factor));
+                if (next === 1) setPan({ x: 0, y: 0 });
+                return next;
+              });
+            }}
+            onDoubleClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }}>
+            <button
+              onClick={() => setPreviewIdx(null)}
+              className="absolute top-2 right-2 z-10 text-white bg-black/40 hover:bg-black/70 rounded-full w-8 h-8 flex items-center justify-center text-xl"
+              title="Fechar (Esc)"
+            >
+              &times;
+            </button>
+            {previewable.length > 1 && (
+              <>
+                <button
+                  onClick={() => goPreview(-1)}
+                  className="absolute left-2 top-1/2 -translate-y-1/2 z-10 bg-black/40 hover:bg-black/70 text-white text-2xl w-9 h-9 rounded-full flex items-center justify-center"
+                  title="Anterior (←)"
+                >
+                  ‹
+                </button>
+                <button
+                  onClick={() => goPreview(1)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 z-10 bg-black/40 hover:bg-black/70 text-white text-2xl w-9 h-9 rounded-full flex items-center justify-center"
+                  title="Próxima (→)"
+                >
+                  ›
+                </button>
+                <div className="absolute bottom-2 left-1/2 -translate-x-1/2 z-10 text-white/90 text-[11px] bg-black/50 px-2 py-0.5 rounded">
+                  {previewPos + 1} / {previewable.length}
+                </div>
+              </>
+            )}
+            {previewCur.isVideo ? (
+              <div className="relative w-full h-full flex items-center justify-center">
+                <video
+                  key={previewCur.url}
+                  src={previewCur.url}
+                  controls
+                  autoPlay
+                  className="max-w-full max-h-full"
+                  style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transformOrigin: "center center" }}
+                />
+                {(/\.(mov|hevc)$/i.test(previewCur.nome || "") || /\.mov$/i.test(previewCur.url)) && (
+                  <div className="absolute top-2 left-2 right-12 bg-amber-900/90 text-amber-50 text-[10px] p-2 rounded">
+                    ⚠ Vídeo possivelmente em HEVC (H.265) — pode aparecer tela preta com áudio. <a href={previewCur.urlDownload} download={previewCur.nome || undefined} className="underline font-semibold">Baixar e abrir local</a>
+                  </div>
+                )}
               </div>
-            </>
-          )}
-          {previewCur.isVideo ? (
-            <video
-              key={previewCur.url}
-              src={previewCur.url}
-              controls
-              autoPlay
-              className="max-w-[92vw] max-h-[92vh] rounded shadow-2xl"
-              onClick={(e) => e.stopPropagation()}
-            />
-          ) : (
-            <img
-              key={previewCur.url}
-              src={previewCur.url}
-              alt=""
-              className="max-w-[92vw] max-h-[92vh] rounded shadow-2xl object-contain"
-              onClick={(e) => e.stopPropagation()}
-            />
-          )}
+            ) : (
+              <img
+                key={previewCur.url}
+                src={previewCur.url}
+                alt=""
+                draggable={false}
+                className="max-w-full max-h-full object-contain select-none"
+                style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transformOrigin: "center center", cursor: zoom > 1 ? "grab" : "zoom-in" }}
+                onMouseDown={(e) => {
+                  if (zoom <= 1) return;
+                  e.preventDefault();
+                  const start = { x: e.clientX, y: e.clientY, px: pan.x, py: pan.y };
+                  const move = (ev: MouseEvent) => setPan({ x: start.px + (ev.clientX - start.x), y: start.py + (ev.clientY - start.y) });
+                  const up = () => { window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up); };
+                  window.addEventListener("mousemove", move);
+                  window.addEventListener("mouseup", up);
+                }}
+              />
+            )}
+            {zoom > 1 && (
+              <div className="absolute top-2 left-2 z-10 text-white/90 text-[10px] bg-black/50 px-2 py-0.5 rounded">
+                {Math.round(zoom * 100)}% · duplo clique reseta
+              </div>
+            )}
+          </div>
         </div>
       )}
     </>
