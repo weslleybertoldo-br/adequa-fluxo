@@ -12,6 +12,7 @@ import {
 import type { CardResult, UpdateCardInfo, UpdateResult } from "./types";
 import { TabSlackHistory } from "./components/tabs/TabSlackHistory";
 import { TabComplexa } from "./components/tabs/TabComplexa";
+import { copyHtmlWithFallback } from "@/lib/clipboard";
 
 // =====================
 // LOGIN SCREEN
@@ -788,11 +789,7 @@ function CopyCobrancaButtons({ cardTitle, lastComment }: { cardTitle: string; la
       const plainText = `${greeting} ${firstName} :D\n\n${messageIntro}${sectionsPlain}`;
       const html = `<p>${greeting} ${firstName} :D</p><br><p>${messageIntro}</p>${sectionsHtml}`;
 
-      const blob = new Blob([html], { type: "text/html" });
-      const blobText = new Blob([plainText], { type: "text/plain" });
-      await navigator.clipboard.write([
-        new ClipboardItem({ "text/html": blob, "text/plain": blobText }),
-      ]);
+      await copyHtmlWithFallback(html, plainText);
 
       if (type === "first") {
         setCopiedFirst(true);
@@ -843,9 +840,7 @@ function CopyCobrancaButtons({ cardTitle, lastComment }: { cardTitle: string; la
             const plainText = `Show ${firstName} :D\n\nMuito obrigado pelo envio dos registros, ficamos pendentes os registros abaixo. Saberia informar se temos previsão para finalizar as pendencias?${sectionsPlain}`;
             const html = `<p>Show ${firstName} :D</p><br><p>Muito obrigado pelo envio dos registros, ficamos pendentes os registros abaixo. Saberia informar se temos previsão para finalizar as pendencias?</p>${sectionsHtml}`;
 
-            const blob = new Blob([html], { type: "text/html" });
-            const blobText = new Blob([plainText], { type: "text/plain" });
-            await navigator.clipboard.write([new ClipboardItem({ "text/html": blob, "text/plain": blobText })]);
+            await copyHtmlWithFallback(html, plainText);
             setCopiedAgradecimento(true);
             setTimeout(() => setCopiedAgradecimento(false), 2000);
           } catch (err) {
@@ -882,9 +877,7 @@ function CopyCobrancaButtons({ cardTitle, lastComment }: { cardTitle: string; la
             const greet = getGreeting();
             const plainText = `${greet} ${firstName} :D\n\n\n\nFicamos pendentes somente a entrega do enxoval!`;
             const html = `<p>${greet} ${firstName} :D</p><br><br><br><p>Ficamos pendentes somente a entrega do enxoval!</p>`;
-            const blob = new Blob([html], { type: "text/html" });
-            const blobText = new Blob([plainText], { type: "text/plain" });
-            await navigator.clipboard.write([new ClipboardItem({ "text/html": blob, "text/plain": blobText })]);
+            await copyHtmlWithFallback(html, plainText);
             setCopiedPendente(true);
             setTimeout(() => setCopiedPendente(false), 2000);
           } catch (err) {
@@ -913,9 +906,7 @@ function CopyCobrancaButtons({ cardTitle, lastComment }: { cardTitle: string; la
             const firstName = franquiaRef.current.split(" ")[0] || "";
             const plainText = `Olá ${firstName},\n\n\nTodas as pendências desta unidade foram finalizadas.\n\n\nCom isso, finalizamos a implantação deste imóvel!\n\n\nMuito obrigado por toda colaboração e boas reservas!`;
             const html = `<p>Olá ${firstName},</p><br><br><p>Todas as pendências desta unidade foram finalizadas.</p><br><br><p>Com isso, finalizamos a implantação deste imóvel!</p><br><br><p>Muito obrigado por toda colaboração e boas reservas!</p>`;
-            const blob = new Blob([html], { type: "text/html" });
-            const blobText = new Blob([plainText], { type: "text/plain" });
-            await navigator.clipboard.write([new ClipboardItem({ "text/html": blob, "text/plain": blobText })]);
+            await copyHtmlWithFallback(html, plainText);
             setCopiedFinalizar(true);
             setTimeout(() => setCopiedFinalizar(false), 2000);
           } catch (err) {
@@ -945,9 +936,7 @@ function CopyCobrancaButtons({ cardTitle, lastComment }: { cardTitle: string; la
             const greet = getGreeting();
             const plainText = `${greet} ${firstName} :D\n\n\nNosso time validou e seguiremos com exceção das pendências restantes.`;
             const html = `<p>${greet} ${firstName} :D</p><br><br><p>Nosso time validou e seguiremos com exceção das pendências restantes.</p>`;
-            const blob = new Blob([html], { type: "text/html" });
-            const blobText = new Blob([plainText], { type: "text/plain" });
-            await navigator.clipboard.write([new ClipboardItem({ "text/html": blob, "text/plain": blobText })]);
+            await copyHtmlWithFallback(html, plainText);
             setCopiedExcecao(true);
             setTimeout(() => setCopiedExcecao(false), 2000);
           } catch (err) {
@@ -1161,11 +1150,7 @@ function CopyScriptPendencias({ cardTitle, lastComment }: { cardTitle?: string; 
 
       const html = `<p>${greeting} ${firstName} :D</p><br><p>${messageIntro}</p><br><p><b>REGISTROS PENDENTES</b></p>${sectionsHtml}`;
 
-      const blob = new Blob([html], { type: "text/html" });
-      const blobText = new Blob([plainText], { type: "text/plain" });
-      await navigator.clipboard.write([
-        new ClipboardItem({ "text/html": blob, "text/plain": blobText }),
-      ]);
+      await copyHtmlWithFallback(html, plainText);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } finally {
@@ -1212,29 +1197,7 @@ function CopyScriptSoEnxoval({ cardTitle }: { cardTitle?: string }) {
 
       const plainText = `${greeting} ${firstName} :D\n\n\nFicamos pendentes somente o enxoval desse imóvel.`;
       const html = `<p>${greeting} ${firstName} :D</p><br><br><p>Ficamos pendentes somente o enxoval desse imóvel.</p>`;
-      const blob = new Blob([html], { type: "text/html" });
-      const blobText = new Blob([plainText], { type: "text/plain" });
-      const tryWrite = async () => {
-        if (!document.hasFocus()) window.focus();
-        await navigator.clipboard.write([new ClipboardItem({ "text/html": blob, "text/plain": blobText })]);
-      };
-      try {
-        await tryWrite();
-      } catch {
-        const ta = document.createElement("div");
-        ta.contentEditable = "true";
-        ta.innerHTML = html;
-        ta.style.cssText = "position:fixed;left:-9999px;top:0;opacity:0";
-        document.body.appendChild(ta);
-        const range = document.createRange();
-        range.selectNodeContents(ta);
-        const sel = window.getSelection();
-        sel?.removeAllRanges();
-        sel?.addRange(range);
-        document.execCommand("copy");
-        sel?.removeAllRanges();
-        ta.remove();
-      }
+      await copyHtmlWithFallback(html, plainText);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } finally {
@@ -1285,7 +1248,7 @@ type SultsExtractResult = {
   media: SultsMedia[];
 };
 
-type DriveFolderCandidate = { id: string; name: string; parentName: string | null; url: string };
+type DriveFolderCandidate = { id: string; name: string; parentName: string | null; hasVistoria?: boolean; createdTime?: string; url: string };
 type DriveUploadResult = {
   pendenciasFolderId: string;
   pendenciasUrl: string;
@@ -1327,6 +1290,8 @@ function ExtrairRegistrosSults({ cardTitle }: { cardTitle?: string }) {
     done: boolean;
   }>(null);
   const upCancelRef = useRef(false);
+  const upInFlightRef = useRef(false);
+  const [selectedSkipped, setSelectedSkipped] = useState<Set<string>>(new Set());
 
   const mediaKey = (m: SultsMedia, idx: number) => `${m.id}-${idx}`;
 
@@ -1541,8 +1506,14 @@ function ExtrairRegistrosSults({ cardTitle }: { cardTitle?: string }) {
         setError(`Nenhuma pasta com nome '${code}' encontrada no Drive.`);
         return;
       }
-      setDriveCandidates(candidates);
-      setSelectedDriveFolder(candidates[0].id);
+      const sorted = [...candidates].sort((a, b) => {
+        const tb = b.createdTime ? new Date(b.createdTime).getTime() : 0;
+        const ta = a.createdTime ? new Date(a.createdTime).getTime() : 0;
+        return tb - ta;
+      });
+      setDriveCandidates(sorted);
+      const preferred = sorted.find((c) => c.hasVistoria) || sorted[0];
+      setSelectedDriveFolder(preferred.id);
       setStep("drive-folder");
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -1559,12 +1530,13 @@ function ExtrairRegistrosSults({ cardTitle }: { cardTitle?: string }) {
     return `${base}-${randomSuffix()}${ext}`;
   };
 
-  const handleDoUpload = async (opts?: { onlySkippedWithSuffix?: boolean }) => {
+  const handleDoUpload = async (opts?: { onlySkippedWithSuffix?: boolean; subset?: Set<string> }) => {
+    if (upInFlightRef.current) return;
     if (!result || !selectedDriveFolder) return;
     let toUpload: SultsMedia[];
     if (opts?.onlySkippedWithSuffix && upJob) {
-      const skippedSet = new Set(upJob.skipped);
-      toUpload = result.media.filter((m) => skippedSet.has(m.nome || `arquivo-${m.id}`));
+      const baseSet = opts.subset && opts.subset.size > 0 ? opts.subset : new Set(upJob.skipped);
+      toUpload = result.media.filter((m) => baseSet.has(m.nome || `arquivo-${m.id}`));
     } else {
       toUpload = getSelectedMedia();
     }
@@ -1572,6 +1544,7 @@ function ExtrairRegistrosSults({ cardTitle }: { cardTitle?: string }) {
       setError("Nada a enviar");
       return;
     }
+    upInFlightRef.current = true;
     const tok = await ensureDriveToken();
     if (!tok) {
       setError("Drive não conectado");
@@ -1601,6 +1574,7 @@ function ExtrairRegistrosSults({ cardTitle }: { cardTitle?: string }) {
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setLoading(false);
+      upInFlightRef.current = false;
       return;
     }
 
@@ -1657,6 +1631,7 @@ function ExtrairRegistrosSults({ cardTitle }: { cardTitle?: string }) {
     }
     setUpJob((prev) => prev ? { ...prev, done: true, currentName: "" } : prev);
     setLoading(false);
+    upInFlightRef.current = false;
   };
 
   return (
@@ -1910,8 +1885,12 @@ function ExtrairRegistrosSults({ cardTitle }: { cardTitle?: string }) {
                     <label key={c.id} className="flex items-start gap-2 p-2 hover:bg-gray-50 cursor-pointer text-xs">
                       <input type="radio" name="drivefolder" checked={selectedDriveFolder === c.id} onChange={() => setSelectedDriveFolder(c.id)} className="mt-1" />
                       <div className="flex-1">
-                        <div className="font-medium text-gray-900">{c.name}</div>
-                        <div className="text-gray-500">{c.parentName ? `Em: ${c.parentName}` : "—"}</div>
+                        <div className="font-medium text-gray-900 flex items-center gap-1">
+                          <span>{c.name}</span>
+                          {c.hasVistoria && <span title="Tem pasta '2. Vistoria / Manutenção'" className="text-green-600">✓</span>}
+                          {c.createdTime && <span className="text-[10px] text-gray-400 font-normal">· criada {new Date(c.createdTime).toLocaleDateString("pt-BR")}</span>}
+                        </div>
+                        <div className="text-gray-500">{c.parentName ? `Em: ${c.parentName}` : "—"}{c.hasVistoria === false && <span className="text-amber-600"> · sem 2. Vistoria/Manutenção</span>}</div>
                       </div>
                       <a href={c.url} target="_blank" rel="noopener" className="text-cyan-600 hover:underline mt-1" onClick={(e) => e.stopPropagation()}>abrir</a>
                     </label>
@@ -2027,16 +2006,42 @@ function ExtrairRegistrosSults({ cardTitle }: { cardTitle?: string }) {
             {upJob.skipped.length > 0 && (
               <details className="mb-2" open>
                 <summary className="cursor-pointer font-medium text-gray-700">Já existiam ({upJob.skipped.length})</summary>
+                {upJob.done && (
+                  <label className="flex items-center gap-1 mt-1 text-[10px] text-gray-600">
+                    <input
+                      type="checkbox"
+                      checked={selectedSkipped.size === upJob.skipped.length && upJob.skipped.length > 0}
+                      ref={(el) => { if (el) el.indeterminate = selectedSkipped.size > 0 && selectedSkipped.size < upJob.skipped.length; }}
+                      onChange={(e) => setSelectedSkipped(e.target.checked ? new Set(upJob.skipped) : new Set())}
+                    />
+                    <span>Marcar/desmarcar todos ({selectedSkipped.size}/{upJob.skipped.length})</span>
+                  </label>
+                )}
                 <ul className="mt-1 max-h-[120px] overflow-y-auto border border-gray-200 rounded">
-                  {upJob.skipped.map((n) => <li key={n} className="p-1 truncate text-gray-500">⏭ {n}</li>)}
+                  {upJob.skipped.map((n) => (
+                    <li key={n} className="flex items-center gap-1 p-1 text-gray-500">
+                      {upJob.done && (
+                        <input
+                          type="checkbox"
+                          checked={selectedSkipped.has(n)}
+                          onChange={() => setSelectedSkipped((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(n)) next.delete(n); else next.add(n);
+                            return next;
+                          })}
+                        />
+                      )}
+                      <span className="truncate">⏭ {n}</span>
+                    </li>
+                  ))}
                 </ul>
                 {upJob.done && (
                   <button
-                    onClick={() => handleDoUpload({ onlySkippedWithSuffix: true })}
-                    disabled={loading}
+                    onClick={() => { handleDoUpload({ onlySkippedWithSuffix: true, subset: selectedSkipped }); setSelectedSkipped(new Set()); }}
+                    disabled={loading || selectedSkipped.size === 0}
                     className="mt-1 bg-yellow-600 text-white px-2 py-1 rounded text-[11px] hover:bg-yellow-700 disabled:opacity-50"
                   >
-                    ✅ Adicionar com sufixo
+                    ✅ Adicionar com sufixo ({selectedSkipped.size})
                   </button>
                 )}
               </details>
