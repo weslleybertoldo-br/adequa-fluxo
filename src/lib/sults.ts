@@ -36,7 +36,11 @@ async function login(): Promise<Session> {
     await page.type("#form\\:login-user-password", SULTS_PASSWORD);
     await Promise.all([
       page.waitForNavigation({ waitUntil: "networkidle2", timeout: 30000 }).catch(() => null),
-      page.evaluate(() => (document.querySelector("#form\\:j_idt24") as HTMLElement | null)?.click()),
+      page.evaluate(() => {
+        const btn = [...document.querySelectorAll<HTMLButtonElement>('button[type="submit"]')]
+          .find((b) => b.textContent?.trim() === "Entrar");
+        btn?.click();
+      }),
     ]);
     await new Promise((r) => setTimeout(r, 3000));
 
