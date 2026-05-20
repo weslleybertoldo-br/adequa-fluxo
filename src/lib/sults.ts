@@ -107,7 +107,6 @@ export async function searchChamadosByCode(code: string): Promise<ChamadoResumo[
     tela: "todos",
     limit: "30",
     global: code,
-    situacaoId: "1,4,5,6",
   });
   const res = await apiPost(
     `/controller/ordem-servico/list?${q}`,
