@@ -2368,6 +2368,30 @@ function TabUpdateCards({ apiRoute, phaseName, phaseDescription, showCopyButton 
     setAtivoCommentOnlyText(card.lastComment);
   };
 
+  const sendAtivoCommentFromAtivoEditor = async () => {
+    if (!editingAtivo || !ativoCommentText.trim()) return;
+    const cardId = editingAtivo;
+    setAtivosUpdating(cardId);
+    try {
+      const res = await fetch("/api/update-cards-phase4-ativos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cardId, action: "update_comment", commentText: ativoCommentText }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setAtivosStatuses((prev) => ({ ...prev, [cardId]: { status: "updated", message: "Comentário atualizado" } }));
+      } else {
+        setAtivosStatuses((prev) => ({ ...prev, [cardId]: { status: "error", message: data.error || data.details || "Erro" } }));
+      }
+    } catch {
+      setAtivosStatuses((prev) => ({ ...prev, [cardId]: { status: "error", message: "Erro de conexão" } }));
+    } finally {
+      setAtivosUpdating(null);
+      setEditingAtivo(null);
+    }
+  };
+
   const sendAtivoCommentOnly = async () => {
     if (!editingAtivoComment || !ativoCommentOnlyText.trim()) return;
     const cardId = editingAtivoComment;
@@ -2780,15 +2804,6 @@ function TabUpdateCards({ apiRoute, phaseName, phaseDescription, showCopyButton 
                             Atualizar Ativo
                           </button>
                         </WithHelp>
-                        <WithHelp help="Abre editor lateral com o último comentário do card.~Ao enviar: adiciona o texto editado como NOVO comentário no card.~NÃO altera vencimento, tags, campos nem move de fase.">
-                          <button
-                            onClick={() => openAtivoCommentEditor(c.id)}
-                            disabled={ativosUpdating !== null || !c.lastComment}
-                            className="bg-yellow-500 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-yellow-600 disabled:opacity-50 transition-colors whitespace-nowrap"
-                          >
-                            Atualizar
-                          </button>
-                        </WithHelp>
                       </>
                     )}
                   </div>
@@ -2823,11 +2838,20 @@ function TabUpdateCards({ apiRoute, phaseName, phaseDescription, showCopyButton 
                         <CopyScriptPendencias cardTitle={c.title} lastComment={c.lastComment} />
                         <CopyScriptSoEnxoval cardTitle={c.title} />
                       </div>
-                      {process.env.NODE_ENV !== "production" && (
-                        <div className="flex gap-2 mt-2">
+                      <div className="flex gap-2 mt-2 items-center">
+                        {process.env.NODE_ENV !== "production" && (
                           <ExtrairRegistrosSults cardTitle={c.title} />
-                        </div>
-                      )}
+                        )}
+                        <WithHelp help="Adiciona o texto editado como NOVO comentário no card.~NÃO altera vencimento, tags, campos nem move de fase.">
+                          <button
+                            onClick={sendAtivoCommentFromAtivoEditor}
+                            disabled={ativosUpdating !== null || !ativoCommentText.trim()}
+                            className="bg-yellow-500 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-yellow-600 disabled:opacity-50 transition-colors whitespace-nowrap"
+                          >
+                            {isUpdating ? "Enviando..." : "Atualizar"}
+                          </button>
+                        </WithHelp>
+                      </div>
                     </div>
                   </div>
                 )}
