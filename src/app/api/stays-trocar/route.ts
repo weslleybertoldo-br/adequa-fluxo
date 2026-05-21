@@ -4,6 +4,7 @@ import {
   trocarCodigoStays,
   previewTrocaStays,
   findStaysListingsByInternalName,
+  findStaysListingByCode,
 } from "@/lib/stays";
 import { errorResponse } from "@/lib/errors";
 
@@ -76,11 +77,24 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const staysId = await getStaysIdFromPipe1(codigoAntigo, codigoNovo);
+    let staysId = await getStaysIdFromPipe1(codigoAntigo, codigoNovo);
+    let staysIdFonte: "pipe1" | "stays_search" = "pipe1";
+    if (!staysId) {
+      // Fallback: Pipe 1 sem ID. Procura direto na Stays por internalName
+      // contendo o codigoAntigo (token). Cobre o caso comum
+      // internalName="ZU01H - PDAA0611" e cards Pipe 1 sem o campo preenchido.
+      const hitAntigo = await findStaysListingByCode(codigoAntigo);
+      const hitNovo = hitAntigo ? null : await findStaysListingByCode(codigoNovo);
+      const hit = hitAntigo || hitNovo;
+      if (hit) {
+        staysId = hit._id;
+        staysIdFonte = "stays_search";
+      }
+    }
     if (!staysId) {
       return NextResponse.json({
         success: false,
-        error: `Não encontrei o ID Stays no card do Pipe 1 (procurei title=${codigoAntigo} e title=${codigoNovo}). Verifique se o card existe e se o campo "ID da Stays do imóvel" está preenchido.`,
+        error: `Não encontrei o listing na Stays. Tentei (1) card Pipe 1 com title=${codigoAntigo}/${codigoNovo} e campo "ID da Stays do imóvel" e (2) busca direta por internalName contendo ${codigoAntigo}/${codigoNovo}.`,
       });
     }
 
@@ -130,6 +144,7 @@ export async function POST(request: NextRequest) {
         titulosAtualizados: p.titulosAtualizados,
         titulosCount,
         body: p.body,
+        staysIdFonte,
         mensagem,
       });
     }
@@ -161,6 +176,7 @@ export async function POST(request: NextRequest) {
       internalNameNovo: r.internalNameNovo,
       titulosAtualizados: r.titulosAtualizados,
       titulosCount,
+      staysIdFonte,
       mensagem,
     });
   } catch (error: unknown) {

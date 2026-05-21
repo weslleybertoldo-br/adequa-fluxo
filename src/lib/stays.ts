@@ -50,35 +50,76 @@ export async function getStaysListing(listingId: string): Promise<any> {
   return r.json();
 }
 
-// Busca listings cujo internalName == codigo. Stays API aceita filtro `q`
-// (busca textual ampla) ou `internalName` direto, mas comportamento varia por
-// versao. Usamos `q=codigo` e filtramos client-side por internalName exato.
-// Retorna apenas listings que NAO sao `excludeListingId`. Falha graciosamente.
+// Scan completo de /content/listings via paginação (skip+limit=100, max ~6k).
+// Stays API NÃO suporta filtro server-side por internalName/q/code/search — todos
+// retornam 400. Único caminho é paginar tudo e filtrar client-side.
+// Cache 10min in-memory pra evitar 30 requests por chamada.
+const STAYS_SCAN_PAGE = 100;
+const STAYS_SCAN_MAX_PAGES = 60;
+const STAYS_CACHE_TTL_MS = 10 * 60 * 1000;
+type StaysListingLite = { _id: string; id: string; internalName: string };
+let staysListingsCache: { at: number; items: StaysListingLite[] } | null = null;
+
+async function scanStaysListings(forceRefresh = false): Promise<StaysListingLite[]> {
+  if (
+    !forceRefresh &&
+    staysListingsCache &&
+    Date.now() - staysListingsCache.at < STAYS_CACHE_TTL_MS
+  ) {
+    return staysListingsCache.items;
+  }
+  const out: StaysListingLite[] = [];
+  for (let page = 0; page < STAYS_SCAN_MAX_PAGES; page++) {
+    const skip = page * STAYS_SCAN_PAGE;
+    let r: Response;
+    try {
+      r = await staysFetch(`/content/listings?limit=${STAYS_SCAN_PAGE}&skip=${skip}`);
+    } catch {
+      break;
+    }
+    if (!r.ok) break;
+    const arr = await r.json().catch(() => null);
+    if (!Array.isArray(arr) || arr.length === 0) break;
+    for (const it of arr as any[]) {
+      out.push({
+        _id: String(it?._id || ""),
+        id: String(it?.id || ""),
+        internalName: String(it?.internalName || ""),
+      });
+    }
+    if (arr.length < STAYS_SCAN_PAGE) break;
+  }
+  staysListingsCache = { at: Date.now(), items: out };
+  return out;
+}
+
+// Busca listings cujo internalName contém `codigo` como token (\bcodigo\b, case-insensitive).
+// Retorna apenas listings que NAO sao `excludeListingId` (compara contra _id E id).
+// Falha graciosamente.
 export async function findStaysListingsByInternalName(
   codigo: string,
   excludeListingId?: string
 ): Promise<Array<{ _id: string; internalName: string }>> {
   if (!codigo) return [];
-  const q = encodeURIComponent(codigo);
-  try {
-    const r = await staysFetch(`/content/listings?q=${q}&limit=20`);
-    if (!r.ok) return [];
-    const data = await r.json();
-    const items = Array.isArray(data) ? data : (data?.data || data?.items || []);
-    const target = codigo.toUpperCase().trim();
-    return items
-      .filter((it: any) => {
-        const idHit = String(it?._id || it?.id || "");
-        const internal = String(it?.internalName || "").toUpperCase().trim();
-        return internal === target && idHit !== excludeListingId;
-      })
-      .map((it: any) => ({
-        _id: String(it?._id || it?.id || ""),
-        internalName: String(it?.internalName || ""),
-      }));
-  } catch {
-    return [];
-  }
+  const all = await scanStaysListings();
+  const re = new RegExp(`\\b${escapeRegex(codigo)}\\b`, "i");
+  const excl = excludeListingId ? String(excludeListingId) : "";
+  return all
+    .filter(
+      (it) =>
+        re.test(it.internalName) &&
+        (!excl || (it._id !== excl && it.id !== excl))
+    )
+    .map((it) => ({ _id: it._id || it.id, internalName: it.internalName }));
+}
+
+// Busca o primeiro listing cujo internalName contém `codigo` como token.
+// Usado como fallback quando o Pipe 1 não tem o ID Stays preenchido.
+export async function findStaysListingByCode(
+  codigo: string
+): Promise<{ _id: string; internalName: string } | null> {
+  const hits = await findStaysListingsByInternalName(codigo);
+  return hits[0] || null;
 }
 
 export async function patchStaysListing(
@@ -148,13 +189,17 @@ export async function previewTrocaStays(
   const body: Record<string, any> = {};
   const titulosAtualizados: Record<string, { antigo: string; novo: string }> = {};
 
-  const antigoNorm = codigoAntigo.toUpperCase().trim();
-  const novoNorm = codigoNovo.toUpperCase().trim();
-  const internalNameAtualNorm = internalNameAntigo.toUpperCase().trim();
+  // Match por token (word-boundary) — aceita internalName exato ("PDAA0611")
+  // ou com prefixo/sufixo ("ZU01H - PDAA0611"). Preserva o resto do nome.
+  const reAntigoInternal = new RegExp(`\\b${escapeRegex(codigoAntigo)}\\b`, "i");
+  const reNovoInternal = new RegExp(`\\b${escapeRegex(codigoNovo)}\\b`, "i");
 
   // 1) internalName
-  if (internalNameAtualNorm === antigoNorm) {
-    body.internalName = codigoNovo;
+  if (reAntigoInternal.test(internalNameAntigo)) {
+    body.internalName = internalNameAntigo.replace(
+      new RegExp(`\\b${escapeRegex(codigoAntigo)}\\b`, "gi"),
+      codigoNovo
+    );
   }
 
   // 2) _mstitle por idioma
@@ -183,7 +228,7 @@ export async function previewTrocaStays(
     const mstitleTemNovo = Object.values(mstitle).some(
       (v) => typeof v === "string" && reNovo.test(v)
     );
-    if (internalNameAtualNorm === novoNorm || mstitleTemNovo) {
+    if (reNovoInternal.test(internalNameAntigo) || mstitleTemNovo) {
       jaTrocado = true;
     } else {
       codigoAusente = true;
