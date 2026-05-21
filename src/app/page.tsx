@@ -1319,6 +1319,48 @@ function ExtrairRegistrosSults({ cardTitle }: { cardTitle?: string }) {
     setZoom(1);
     setPan({ x: 0, y: 0 });
   }, [previewIdx]);
+
+  const [heicMap, setHeicMap] = useState<Record<string, string>>({});
+  const [heicConverting, setHeicConverting] = useState(false);
+  const [heicError, setHeicError] = useState<string | null>(null);
+  const isHeic = (m: SultsMedia | null) =>
+    !!m && m.isImage && /\.(heic|heif)(\?|$)/i.test(`${m.nome || ""} ${m.url}`);
+
+  useEffect(() => {
+    if (!previewCur || !isHeic(previewCur)) {
+      setHeicConverting(false);
+      setHeicError(null);
+      return;
+    }
+    if (heicMap[previewCur.url]) return;
+    let cancelled = false;
+    setHeicConverting(true);
+    setHeicError(null);
+    (async () => {
+      try {
+        const resp = await fetch(previewCur.url);
+        if (!resp.ok) throw new Error(`fetch ${resp.status}`);
+        const blob = await resp.blob();
+        const { default: heic2any } = await import("heic2any");
+        const out = await heic2any({ blob, toType: "image/jpeg", quality: 0.85 });
+        const jpegBlob = Array.isArray(out) ? out[0] : (out as Blob);
+        if (cancelled) return;
+        const objUrl = URL.createObjectURL(jpegBlob);
+        setHeicMap((prev) => ({ ...prev, [previewCur.url]: objUrl }));
+      } catch (e) {
+        if (!cancelled) setHeicError(e instanceof Error ? e.message : String(e));
+      } finally {
+        if (!cancelled) setHeicConverting(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [previewCur, heicMap]);
+
+  const heicMapRef = useRef(heicMap);
+  heicMapRef.current = heicMap;
+  useEffect(() => () => {
+    Object.values(heicMapRef.current).forEach((u) => URL.revokeObjectURL(u));
+  }, []);
   const toggleAll = (checked: boolean) => {
     if (!result) return;
     setSelectedMedia(checked ? new Set(result.media.map((m, i) => mediaKey(m, i))) : new Set());
@@ -2116,25 +2158,46 @@ function ExtrairRegistrosSults({ cardTitle }: { cardTitle?: string }) {
                   </div>
                 )}
               </div>
-            ) : (
-              <img
-                key={previewCur.url}
-                src={previewCur.url}
-                alt=""
-                draggable={false}
-                className="max-w-full max-h-full object-contain select-none"
-                style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transformOrigin: "center center", cursor: zoom > 1 ? "grab" : "zoom-in" }}
-                onMouseDown={(e) => {
-                  if (zoom <= 1) return;
-                  e.preventDefault();
-                  const start = { x: e.clientX, y: e.clientY, px: pan.x, py: pan.y };
-                  const move = (ev: MouseEvent) => setPan({ x: start.px + (ev.clientX - start.x), y: start.py + (ev.clientY - start.y) });
-                  const up = () => { window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up); };
-                  window.addEventListener("mousemove", move);
-                  window.addEventListener("mouseup", up);
-                }}
-              />
-            )}
+            ) : (() => {
+              const heic = isHeic(previewCur);
+              const displaySrc = heic ? heicMap[previewCur.url] : previewCur.url;
+              if (heic && !displaySrc) {
+                return (
+                  <div className="text-white/80 text-xs flex flex-col items-center gap-2 px-4 text-center">
+                    {heicError ? (
+                      <>
+                        <span className="text-amber-300">Falha ao converter HEIC: {heicError}</span>
+                        <a href={previewCur.urlDownload} download={previewCur.nome || undefined} className="underline">Baixar arquivo</a>
+                      </>
+                    ) : (
+                      <>
+                        <span className="animate-pulse">Convertendo HEIC…</span>
+                        <span className="text-white/50">{previewCur.nome}</span>
+                      </>
+                    )}
+                  </div>
+                );
+              }
+              return (
+                <img
+                  key={displaySrc}
+                  src={displaySrc}
+                  alt=""
+                  draggable={false}
+                  className="max-w-full max-h-full object-contain select-none"
+                  style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transformOrigin: "center center", cursor: zoom > 1 ? "grab" : "zoom-in" }}
+                  onMouseDown={(e) => {
+                    if (zoom <= 1) return;
+                    e.preventDefault();
+                    const start = { x: e.clientX, y: e.clientY, px: pan.x, py: pan.y };
+                    const move = (ev: MouseEvent) => setPan({ x: start.px + (ev.clientX - start.x), y: start.py + (ev.clientY - start.y) });
+                    const up = () => { window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up); };
+                    window.addEventListener("mousemove", move);
+                    window.addEventListener("mouseup", up);
+                  }}
+                />
+              );
+            })()}
             {zoom > 1 && (
               <div className="absolute top-2 left-2 z-10 text-white/90 text-[10px] bg-black/50 px-2 py-0.5 rounded">
                 {Math.round(zoom * 100)}% · duplo clique reseta
