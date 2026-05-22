@@ -1,9 +1,10 @@
-import puppeteer, { type Browser, type Page } from "puppeteer";
 import crypto from "node:crypto";
 
 const SULTS_BASE = process.env.SULTS_BASE_URL || "https://seazone.sults.com.br";
 const SULTS_USER = process.env.SULTS_USER || "";
 const SULTS_PASSWORD = process.env.SULTS_PASSWORD || "";
+const SULTS_AGENT_URL = process.env.SULTS_AGENT_URL || "";
+const SULTS_AGENT_SECRET = process.env.SULTS_AGENT_SECRET || "";
 
 const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36";
@@ -17,43 +18,23 @@ let cachedSession: Session | null = null;
 const SESSION_TTL_MS = 25 * 60 * 1000;
 
 async function login(): Promise<Session> {
-  if (!SULTS_USER || !SULTS_PASSWORD) {
-    throw new Error("SULTS_USER e SULTS_PASSWORD não configurados em env");
+  if (!SULTS_AGENT_URL || !SULTS_AGENT_SECRET) {
+    throw new Error(
+      "SULTS_AGENT_URL/SULTS_AGENT_SECRET nao configurados — agente local indisponivel (login Sults so funciona via agente)",
+    );
   }
-
-  let browser: Browser | null = null;
-  try {
-    browser = await puppeteer.launch({
-      headless: true,
-      args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
-    });
-    const page: Page = await browser.newPage();
-    await page.setUserAgent(UA);
-
-    await page.goto(`${SULTS_BASE}/login`, { waitUntil: "networkidle2", timeout: 30000 });
-    await page.waitForSelector("#form\\:login-usuario-inputText", { timeout: 10000 });
-    await page.type("#form\\:login-usuario-inputText", SULTS_USER);
-    await page.type("#form\\:login-user-password", SULTS_PASSWORD);
-    await Promise.all([
-      page.waitForNavigation({ waitUntil: "networkidle2", timeout: 30000 }).catch(() => null),
-      page.evaluate(() => {
-        const btn = [...document.querySelectorAll<HTMLButtonElement>('button[type="submit"]')]
-          .find((b) => b.textContent?.trim() === "Entrar");
-        btn?.click();
-      }),
-    ]);
-    await new Promise((r) => setTimeout(r, 3000));
-
-    if (!page.url().includes("/solucoes") && !page.url().includes("/chamados")) {
-      throw new Error(`Falha no login Sults — URL pós-login: ${page.url()}`);
-    }
-
-    const cookies = await page.cookies();
-    const cookieHeader = cookies.map((c) => `${c.name}=${c.value}`).join("; ");
-    return { cookieHeader, expiresAt: Date.now() + SESSION_TTL_MS };
-  } finally {
-    if (browser) await browser.close().catch(() => null);
+  const res = await fetch(`${SULTS_AGENT_URL.replace(/\/$/, "")}/sults-session`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Agent-Secret": SULTS_AGENT_SECRET },
+    body: JSON.stringify({}),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Agente Sults falhou: HTTP ${res.status} ${text}`);
   }
+  const data = (await res.json()) as { cookieHeader?: string; expiresAt?: number };
+  if (!data.cookieHeader || !data.expiresAt) throw new Error("Agente retornou payload invalido");
+  return { cookieHeader: data.cookieHeader, expiresAt: data.expiresAt };
 }
 
 async function getSession(): Promise<Session> {
