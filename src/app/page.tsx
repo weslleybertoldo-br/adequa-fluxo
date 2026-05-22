@@ -2839,9 +2839,7 @@ function TabUpdateCards({ apiRoute, phaseName, phaseDescription, showCopyButton 
                         <CopyScriptSoEnxoval cardTitle={c.title} />
                       </div>
                       <div className="flex gap-2 mt-2 items-center">
-                        {process.env.NODE_ENV !== "production" && (
-                          <ExtrairRegistrosSults cardTitle={c.title} />
-                        )}
+                        <ExtrairRegistrosSults cardTitle={c.title} />
                         <WithHelp help="Adiciona o texto editado como NOVO comentário no card.~NÃO altera vencimento, tags, campos nem move de fase.">
                           <button
                             onClick={sendAtivoCommentFromAtivoEditor}
@@ -3034,11 +3032,9 @@ function Phase5EditButton({ cardId, cardTitle, lastComment }: { cardId: string; 
                 </button>
               </WithHelp>
             </div>
-            {process.env.NODE_ENV !== "production" && (
-              <div className="mt-3 pt-3 border-t border-gray-200">
-                <ExtrairRegistrosSults cardTitle={cardTitle} />
-              </div>
-            )}
+            <div className="mt-3 pt-3 border-t border-gray-200">
+              <ExtrairRegistrosSults cardTitle={cardTitle} />
+            </div>
           </div>
         </div>
       )}
@@ -3862,11 +3858,9 @@ function TabRevisao() {
                             </button>
                           </WithHelp>
                         </div>
-                        {process.env.NODE_ENV !== "production" && (
-                          <div className="mt-3 pt-3 border-t border-gray-200">
-                            <ExtrairRegistrosSults cardTitle={c.title} />
-                          </div>
-                        )}
+                        <div className="mt-3 pt-3 border-t border-gray-200">
+                          <ExtrairRegistrosSults cardTitle={c.title} />
+                        </div>
                       </div>
                     </div>
                   )}
