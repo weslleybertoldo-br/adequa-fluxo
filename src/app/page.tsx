@@ -723,6 +723,54 @@ function CopyFupButton({ days, template = "fase4", extraDays = 0 }: { days: numb
   );
 }
 
+function CopyObrigadoFaltouItens({ cardTitle, lastComment }: { cardTitle: string; lastComment: string }) {
+  const [copied, setCopied] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const franquiaRef = useRef<string>("");
+  const fetchedRef = useRef(false);
+
+  const handleCopy = async () => {
+    setLoading(true);
+    try {
+      if (!fetchedRef.current) {
+        try {
+          const res = await fetch(`/api/get-franqueado?code=${encodeURIComponent(cardTitle.trim())}`);
+          const data = await res.json();
+          franquiaRef.current = data.franqueado || "";
+        } catch { /* silencioso */ }
+        fetchedRef.current = true;
+      }
+      const firstName = franquiaRef.current.split(" ")[0] || "";
+      const sections = parsePendingSectionsFromComment(lastComment);
+      let sectionsPlain = "";
+      let sectionsHtml = "";
+      for (const section of sections) {
+        sectionsPlain += `\n\n${section.name}:\n${section.items.join("\n")}`;
+        sectionsHtml += `<br><p><b>${section.name}:</b><br>${section.items.join("<br>")}</p>`;
+      }
+      const plainText = `Show ${firstName} :D\n\nMuito obrigado pelo envio dos registros, ficamos pendentes os registros abaixo. Saberia informar se temos previsão para finalizar as pendencias?${sectionsPlain}`;
+      const html = `<p>Show ${firstName} :D</p><br><p>Muito obrigado pelo envio dos registros, ficamos pendentes os registros abaixo. Saberia informar se temos previsão para finalizar as pendencias?</p>${sectionsHtml}`;
+      await copyHtmlWithFallback(html, plainText);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error("Erro ao copiar agradecimento:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <button
+      onClick={handleCopy}
+      disabled={loading}
+      className={`px-3 py-2 rounded-md text-xs font-medium transition-colors ${copied ? "bg-green-500 text-white" : "bg-gray-200 text-gray-700 hover:bg-gray-300"} disabled:opacity-50`}
+    >
+      {loading && !copied ? "..." : copied ? "Copiado!" : "Obrigado: faltou itens"}
+    </button>
+  );
+}
+
 function CopyCobrancaButtons({ cardTitle, lastComment }: { cardTitle: string; lastComment: string }) {
   const [copiedFirst, setCopiedFirst] = useState(false);
   const [copiedSecond, setCopiedSecond] = useState(false);
@@ -3858,8 +3906,9 @@ function TabRevisao() {
                             </button>
                           </WithHelp>
                         </div>
-                        <div className="mt-3 pt-3 border-t border-gray-200">
+                        <div className="mt-3 pt-3 border-t border-gray-200 flex items-center gap-2 flex-wrap">
                           <ExtrairRegistrosSults cardTitle={c.title} />
+                          <CopyObrigadoFaltouItens cardTitle={c.title} lastComment={complexaCommentText || c.lastComment || ""} />
                         </div>
                       </div>
                     </div>
