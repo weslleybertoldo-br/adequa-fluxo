@@ -24,6 +24,25 @@ export async function GET(request: NextRequest) {
 
     const raws = await listarSuportesTroca();
 
+    // Mapa code → status do imóvel (Sapron), 1 fetch da lista inteira.
+    // Usado pra deduzir "Status do Imóvel" em cards que ainda não foram pra "Aguardando".
+    const sapronStatusByCode = new Map<string, string>();
+    try {
+      const r = await fetch("https://api.sapron.com.br/properties/properties_list/", {
+        headers: { "X-SAPRON-API-KEY": "85Rjs5I1QCLQRlWfncYkBbFOeYOn5iXiczeKMfcswao" },
+      });
+      if (r.ok) {
+        const props: Array<{ code: string; status: string }> = await r.json();
+        for (const p of props) {
+          if (p?.code) {
+            sapronStatusByCode.set(p.code.toUpperCase(), p.status === "Active" ? "Ativo" : "Implantação");
+          }
+        }
+      }
+    } catch (err) {
+      console.error("[list-troca-codigo] Sapron properties_list falhou:", err);
+    }
+
     const phases: { id: string; name: FaseUI }[] = [
       { id: "novo", name: "Novo" },
       { id: "em_andamento", name: "Em Andamento" },
@@ -45,6 +64,15 @@ export async function GET(request: NextRequest) {
       if (!fase) continue;
 
       const campos = extrairCamposTroca(card);
+
+      // Deduz status do imóvel via Sapron quando o card ainda não tem (fases Novo/Em Andamento).
+      // Prefere o código novo (estado pós-troca); fallback antigo.
+      if (!campos.statusImovel) {
+        campos.statusImovel =
+          sapronStatusByCode.get((campos.codigoNovo || "").toUpperCase()) ||
+          sapronStatusByCode.get((campos.codigoAntigo || "").toUpperCase()) ||
+          "";
+      }
 
       // Filtro de pesquisa: aceita match em codigoAntigo, codigoNovo ou codigo_imovel
       if (search) {

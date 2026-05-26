@@ -6856,6 +6856,69 @@ function CardTrocaCode({ card, phaseName, getFieldValue, onReload }: CardTrocaCo
     csProp: { valor: flagToStatus(flags.alteradoPipefyCsProp) },
   });
 
+  // Carrega status persistido (Vercel Blob) e sobrepõe os defaults de flags.
+  // Assim o tracker mantém o que o usuário marcou clicando, mesmo após reload.
+  useEffect(() => {
+    if (!card?.id) return;
+    let cancelado = false;
+    const aplicar = (salvo: Record<string, any>) => {
+      if (cancelado || !salvo || typeof salvo !== "object") return;
+      setStatus((prev) => {
+        const merged = { ...prev };
+        for (const [campo, val] of Object.entries(salvo)) {
+          if (campo === "_updatedAt") continue;
+          if (val && typeof val === "object" && "valor" in val) {
+            merged[campo] = { valor: val.valor, mensagem: val.mensagem };
+          }
+        }
+        return merged;
+      });
+    };
+    // 1) fallback local imediato; 2) Blob sobrepõe (fonte da verdade cross-device)
+    try {
+      const local = JSON.parse(localStorage.getItem(`troca-status:${card.id}`) || "{}");
+      aplicar(local);
+    } catch {}
+    (async () => {
+      try {
+        const res = await fetch(`/api/troca-status?cardId=${encodeURIComponent(card.id)}`);
+        const data = await res.json();
+        if (data?.success && data.status && Object.keys(data.status).length > 0) {
+          aplicar(data.status);
+          try {
+            localStorage.setItem(`troca-status:${card.id}`, JSON.stringify(data.status));
+          } catch {}
+        }
+      } catch {
+        /* offline/Blob indisponível: mantém o fallback local */
+      }
+    })();
+    return () => {
+      cancelado = true;
+    };
+  }, [card?.id]);
+
+  // setStatus + persiste no Blob (fire-and-forget). Usado pelos resultados finais dos botões.
+  const saveCampo = (campo: string, valor: StatusCampo["valor"], mensagem?: string) => {
+    const novo: StatusCampo = mensagem != null ? { valor, mensagem } : { valor };
+    setStatus((prev) => ({ ...prev, [campo]: novo }));
+    // fallback local imediato (sobrevive reload mesmo se o Blob falhar)
+    try {
+      const k = `troca-status:${card?.id}`;
+      const cur = JSON.parse(localStorage.getItem(k) || "{}");
+      cur[campo] = novo;
+      cur._updatedAt = new Date().toISOString();
+      localStorage.setItem(k, JSON.stringify(cur));
+    } catch {}
+    if (card?.id) {
+      fetch("/api/troca-status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cardId: card.id, campo, valor, mensagem }),
+      }).catch(() => {});
+    }
+  };
+
   const fields = card.fields || [];
   const codigoAntigo = getFieldValue(fields, "Código Antigo") || card.title;
   const codigoNovo =
@@ -6886,24 +6949,16 @@ function CardTrocaCode({ card, phaseName, getFieldValue, onReload }: CardTrocaCo
       );
       const data = await res.json();
       if (data.success) {
-        setStatus((prev) => ({
-          ...prev,
-          planilha: {
-            valor: data.resultados.codigoNovo.encontrado ? "sim" : "nao",
-            mensagem: data.mensagem,
-          },
-        }));
+        saveCampo(
+          "planilha",
+          data.resultados.codigoNovo.encontrado ? "sim" : "nao",
+          data.mensagem
+        );
       } else {
-        setStatus((prev) => ({
-          ...prev,
-          planilha: { valor: "nao", mensagem: data.error },
-        }));
+        saveCampo("planilha", "nao", data.error);
       }
     } catch (error) {
-      setStatus((prev) => ({
-        ...prev,
-        planilha: { valor: "nao", mensagem: "Erro de conexão" },
-      }));
+      saveCampo("planilha", "nao", "Erro de conexão");
     } finally {
       setLoadingAction(null);
     }
@@ -6921,24 +6976,12 @@ function CardTrocaCode({ card, phaseName, getFieldValue, onReload }: CardTrocaCo
         const algumEncontrado =
           data.resultados.codigoAntigo.encontrado ||
           data.resultados.codigoNovo.encontrado;
-        setStatus((prev) => ({
-          ...prev,
-          precoMinimo: {
-            valor: algumEncontrado ? "sim" : "nao",
-            mensagem: data.mensagem,
-          },
-        }));
+        saveCampo("precoMinimo", algumEncontrado ? "sim" : "nao", data.mensagem);
       } else {
-        setStatus((prev) => ({
-          ...prev,
-          precoMinimo: { valor: "nao", mensagem: data.error },
-        }));
+        saveCampo("precoMinimo", "nao", data.error);
       }
     } catch (error) {
-      setStatus((prev) => ({
-        ...prev,
-        precoMinimo: { valor: "nao", mensagem: "Erro de conexão" },
-      }));
+      saveCampo("precoMinimo", "nao", "Erro de conexão");
     } finally {
       setLoadingAction(null);
     }
@@ -6969,21 +7012,12 @@ function CardTrocaCode({ card, phaseName, getFieldValue, onReload }: CardTrocaCo
         } else {
           valor = "pendente";
         }
-        setStatus((prev) => ({
-          ...prev,
-          pipefy: { valor, mensagem: data.resumo },
-        }));
+        saveCampo("pipefy", valor, data.resumo);
       } else {
-        setStatus((prev) => ({
-          ...prev,
-          pipefy: { valor: "nao", mensagem: data.error },
-        }));
+        saveCampo("pipefy", "nao", data.error);
       }
     } catch (error) {
-      setStatus((prev) => ({
-        ...prev,
-        pipefy: { valor: "nao", mensagem: "Erro de conexão" },
-      }));
+      saveCampo("pipefy", "nao", "Erro de conexão");
     } finally {
       setLoadingAction(null);
     }
@@ -7025,26 +7059,18 @@ function CardTrocaCode({ card, phaseName, getFieldValue, onReload }: CardTrocaCo
           resultados: data.resultados,
           mensagem: data.mensagem,
         });
-        setStatus((prev) => ({
-          ...prev,
-          pipefy: {
-            valor: data.erros === 0 && data.sucessos > 0 ? "sim" : "nao",
-            mensagem: data.mensagem,
-          },
-        }));
+        saveCampo(
+          "pipefy",
+          data.erros === 0 && data.sucessos > 0 ? "sim" : "nao",
+          data.mensagem
+        );
         // Limpar preview pra forçar nova consulta caso o user queira reverificar
         setPipefyPreview(null);
       } else {
-        setStatus((prev) => ({
-          ...prev,
-          pipefy: { valor: "nao", mensagem: data.error || "Erro ao trocar" },
-        }));
+        saveCampo("pipefy", "nao", data.error || "Erro ao trocar");
       }
     } catch (error) {
-      setStatus((prev) => ({
-        ...prev,
-        pipefy: { valor: "nao", mensagem: "Erro de conexão" },
-      }));
+      saveCampo("pipefy", "nao", "Erro de conexão");
     } finally {
       setLoadingAction(null);
     }
@@ -7060,24 +7086,12 @@ function CardTrocaCode({ card, phaseName, getFieldValue, onReload }: CardTrocaCo
       const data = await res.json();
       if (data.success) {
         // "completo" = troca já feita, "nao_iniciado" = ainda não
-        setStatus((prev) => ({
-          ...prev,
-          sapron: {
-            valor: data.statusTroca === "completo" ? "sim" : "nao",
-            mensagem: data.mensagem,
-          },
-        }));
+        saveCampo("sapron", data.statusTroca === "completo" ? "sim" : "nao", data.mensagem);
       } else {
-        setStatus((prev) => ({
-          ...prev,
-          sapron: { valor: "nao", mensagem: data.error },
-        }));
+        saveCampo("sapron", "nao", data.error);
       }
     } catch (error) {
-      setStatus((prev) => ({
-        ...prev,
-        sapron: { valor: "nao", mensagem: "Erro de conexão" },
-      }));
+      saveCampo("sapron", "nao", "Erro de conexão");
     } finally {
       setLoadingAction(null);
     }
@@ -7195,10 +7209,7 @@ function CardTrocaCode({ card, phaseName, getFieldValue, onReload }: CardTrocaCo
       });
       const data = await res.json();
       if (data.success) {
-        setStatus((prev) => ({
-          ...prev,
-          moverCard: { valor: "sim", mensagem: data.mensagem },
-        }));
+        saveCampo("moverCard", "sim", data.mensagem);
         setMoverPreview(null);
       } else {
         setStatus((prev) => ({
@@ -7239,13 +7250,7 @@ function CardTrocaCode({ card, phaseName, getFieldValue, onReload }: CardTrocaCo
       if (data.success) {
         // Sem patch: ou ja foi trocado (sim) ou codigo nao esta na Stays (nao).
         if (!data.precisaPatch) {
-          setStatus((prev) => ({
-            ...prev,
-            stays: {
-              valor: data.jaTrocado ? "sim" : "nao",
-              mensagem: data.mensagem,
-            },
-          }));
+          saveCampo("stays", data.jaTrocado ? "sim" : "nao", data.mensagem);
           setStaysPreview(null);
         } else {
           setStaysPreview({
@@ -7285,25 +7290,13 @@ function CardTrocaCode({ card, phaseName, getFieldValue, onReload }: CardTrocaCo
       });
       const data = await res.json();
       if (data.success) {
-        setStatus((prev) => ({
-          ...prev,
-          stays: {
-            valor: data.patchEnviado ? "sim" : "nao",
-            mensagem: data.mensagem,
-          },
-        }));
+        saveCampo("stays", data.patchEnviado ? "sim" : "nao", data.mensagem);
         setStaysPreview(null);
       } else {
-        setStatus((prev) => ({
-          ...prev,
-          stays: { valor: "nao", mensagem: data.error || "Erro ao atualizar Stays" },
-        }));
+        saveCampo("stays", "nao", data.error || "Erro ao atualizar Stays");
       }
     } catch (error) {
-      setStatus((prev) => ({
-        ...prev,
-        stays: { valor: "nao", mensagem: "Erro de conexão" },
-      }));
+      saveCampo("stays", "nao", "Erro de conexão");
     } finally {
       setLoadingAction(null);
     }
