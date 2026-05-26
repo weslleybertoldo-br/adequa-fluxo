@@ -8,3 +8,4 @@ next-env.d.ts
 .suporte-ops-token.json
 .lovable-token.json
 scripts-sults-test.mjs
+.dev-server.log
