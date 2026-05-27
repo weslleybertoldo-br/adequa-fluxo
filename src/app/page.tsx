@@ -6566,8 +6566,8 @@ function SectionTrocaCodigo() {
   const [searchGlobal, setSearchGlobal] = useState("");
   const [searchPorFase, setSearchPorFase] = useState("");
 
-  const loadAllData = async () => {
-    setLoading(true);
+  const loadAllData = async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const res = await fetch("/api/list-troca-codigo");
       const data = await res.json();
@@ -6581,7 +6581,7 @@ function SectionTrocaCodigo() {
     } catch (error) {
       console.error("Erro ao carregar dados:", error);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -6647,7 +6647,7 @@ function SectionTrocaCodigo() {
           <p className="text-gray-500 text-xs mt-1">Automação troca de código — Seazone</p>
         </div>
         <button
-          onClick={loadAllData}
+          onClick={() => loadAllData()}
           disabled={loading}
           className="bg-blue-600 text-white px-4 py-2 rounded-md text-sm hover:bg-blue-700 disabled:opacity-50"
         >
@@ -6729,7 +6729,7 @@ function SectionTrocaCodigo() {
               card={card}
               phaseName={isGlobalSearching ? phaseMapping[card.status as FaseTrocaTab] || "" : currentPhaseName}
               getFieldValue={getFieldValue}
-              onReload={loadAllData}
+              onReload={() => loadAllData(true)}
             />
           ))}
         </div>
