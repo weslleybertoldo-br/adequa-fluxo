@@ -7364,16 +7364,31 @@ function CardTrocaCode({ card, phaseName, getFieldValue, onReload }: CardTrocaCo
               <p className="text-xs text-gray-500 truncate">{lastComment.text}</p>
             </div>
           )}
-          {card.url && (
-            <a
-              href={card.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={(e) => e.stopPropagation()}
-              className="text-xs text-blue-600 hover:underline whitespace-nowrap"
-            >
-              suporte-ops ↗
-            </a>
+          {(card.url || (card.slack_channel && card.slack_ts)) && (
+            <div className="flex flex-col items-end gap-0.5">
+              {card.url && (
+                <a
+                  href={card.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  className="text-xs text-blue-600 hover:underline whitespace-nowrap"
+                >
+                  suporte-ops ↗
+                </a>
+              )}
+              {card.slack_channel && card.slack_ts && (
+                <a
+                  href={`https://seazone-fund.slack.com/archives/${card.slack_channel}/p${card.slack_ts.replace(".", "")}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  className="text-xs text-blue-600 hover:underline whitespace-nowrap"
+                >
+                  Slack ↗
+                </a>
+              )}
+            </div>
           )}
           {/* Botões de avançar/retornar fase — sempre visíveis no header */}
           <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
