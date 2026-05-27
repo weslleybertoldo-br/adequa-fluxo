@@ -219,13 +219,18 @@ export async function GET(request: NextRequest) {
       // tradução de emojis.
       const lower = rawText.toLowerCase();
       const isRoot = i === 0;
+      // Transições de status são postadas pelo bot/sistema. Emojis de status
+      // (✅, 🔄, ⏳) só contam como status change em msg de bot — senão uma reply
+      // humana tipo "sim, feito ✅" some indevidamente de "replies depois do Aguardando".
+      const isBotMsg = !m.user && (!!m.bot_id || !!m.username);
       const isStatusChange =
-        rawText.includes(":arrows_counterclockwise:") ||
-        rawText.includes(":hourglass_flowing_sand:") ||
-        rawText.includes(":white_check_mark:") ||
         /Em Andamento|Aguardando|Concluído|Concluido|Arquivado/i.test(
           rawText.split("\n")[0] || ""
-        );
+        ) ||
+        (isBotMsg &&
+          (rawText.includes(":arrows_counterclockwise:") ||
+            rawText.includes(":hourglass_flowing_sand:") ||
+            rawText.includes(":white_check_mark:")));
       const isTemplateEnviar =
         lower.includes("troca de código está em andamento") ||
         lower.includes("troca de codigo esta em andamento") ||
