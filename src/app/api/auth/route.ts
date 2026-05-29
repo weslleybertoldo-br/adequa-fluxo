@@ -1,15 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createHmac, timingSafeEqual } from "crypto";
 
-const VALID_EMAIL = process.env.AUTH_EMAIL || "";
-const VALID_PASSWORD = process.env.AUTH_PASSWORD || "";
 const TOKEN_SECRET = process.env.TOKEN_SECRET || "";
-
-function signToken(email: string): string {
-  const payload = `${email}:${Date.now()}`;
-  const signature = createHmac("sha256", TOKEN_SECRET).update(payload).digest("hex");
-  return Buffer.from(`${payload}:${signature}`).toString("base64");
-}
 
 function verifyToken(token: string): boolean {
   try {
@@ -30,32 +22,6 @@ function verifyToken(token: string): boolean {
     return true;
   } catch {
     return false;
-  }
-}
-
-export async function POST(req: NextRequest) {
-  if (!VALID_EMAIL || !VALID_PASSWORD || !TOKEN_SECRET) {
-    return NextResponse.json({ error: "Autenticação não configurada" }, { status: 500 });
-  }
-  try {
-    const { email, password } = await req.json();
-
-    if (email === VALID_EMAIL && password === VALID_PASSWORD) {
-      const token = signToken(email);
-      const response = NextResponse.json({ success: true });
-      response.cookies.set("auth_token", token, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "lax",
-        maxAge: 60 * 60 * 24,
-        path: "/",
-      });
-      return response;
-    }
-
-    return NextResponse.json({ success: false, error: "Email ou senha incorretos" }, { status: 401 });
-  } catch {
-    return NextResponse.json({ error: "Erro no servidor" }, { status: 500 });
   }
 }
 

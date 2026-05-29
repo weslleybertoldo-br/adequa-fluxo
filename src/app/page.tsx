@@ -18,66 +18,36 @@ import { copyHtmlWithFallback } from "@/lib/clipboard";
 // LOGIN SCREEN
 // =====================
 
-function LoginScreen({ onLogin }: { onLogin: () => void }) {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+function LoginScreen() {
   const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
 
-  const handleLogin = async () => {
-    setLoading(true);
-    setError("");
-    try {
-      const res = await fetch("/api/auth", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        onLogin();
-      } else {
-        setError(data.error || "Email ou senha incorretos");
-      }
-    } catch {
-      setError("Erro de conexão");
-    } finally {
-      setLoading(false);
+  useEffect(() => {
+    const e = new URLSearchParams(window.location.search).get("auth_error");
+    if (e) {
+      setError(e);
+      // Limpa o query param da URL sem recarregar
+      window.history.replaceState({}, "", window.location.pathname);
     }
-  };
+  }, []);
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
-      <div className="bg-white rounded-lg shadow-lg p-8 w-full max-w-sm">
-        <h1 className="text-2xl font-bold text-gray-900 mb-1">Pipefy Enxoval</h1>
-        <p className="text-sm text-gray-500 mb-6">Faça login para acessar</p>
-        <input
-          type="email"
-          placeholder="Email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && document.getElementById("pwd")?.focus()}
-          className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
-        />
-        <input
-          id="pwd"
-          type="password"
-          placeholder="Senha"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && handleLogin()}
-          className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500"
-        />
-        {error && <p className="text-red-600 text-sm mb-3">{error}</p>}
-        <WithHelp help="Faz login no sistema com email e senha para acessar o dashboard" className="relative w-full">
-          <button
-            onClick={handleLogin}
-            disabled={loading || !email || !password}
-            className="w-full bg-blue-600 text-white py-2.5 rounded-md font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors"
-          >
-            {loading ? "Entrando..." : "Entrar"}
-          </button>
-        </WithHelp>
+      <div className="bg-white rounded-lg shadow-lg p-8 w-full max-w-sm text-center">
+        <h1 className="text-2xl font-bold text-gray-900 mb-1">Adequa Fluxo</h1>
+        <p className="text-sm text-gray-500 mb-6">Faça login com sua conta Seazone</p>
+        {error && <p className="text-red-600 text-sm mb-4">{error}</p>}
+        <a
+          href="/api/auth/google/start"
+          className="flex items-center justify-center gap-3 w-full border border-gray-300 bg-white text-gray-700 py-2.5 rounded-md font-medium hover:bg-gray-50 transition-colors"
+        >
+          <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
+            <path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844a4.14 4.14 0 0 1-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.615z" />
+            <path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z" />
+            <path fill="#FBBC05" d="M3.964 10.706A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.706V4.962H.957A8.997 8.997 0 0 0 0 9c0 1.452.348 2.827.957 4.038l3.007-2.332z" />
+            <path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.962L3.964 7.294C4.672 5.167 6.656 3.58 9 3.58z" />
+          </svg>
+          Entrar com Google
+        </a>
       </div>
     </div>
   );
@@ -6415,7 +6385,7 @@ export default function Home() {
 
   // Login
   if (!authenticated) {
-    return <LoginScreen onLogin={() => setAuthenticated(true)} />;
+    return <LoginScreen />;
   }
 
   // Dashboard
