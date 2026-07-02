@@ -48,8 +48,11 @@ async function getStaysIdFromPipe1(
 }
 
 export async function POST(request: NextRequest) {
+  const agentSecret = request.headers.get("x-agent-secret");
+  const agentOk =
+    !!process.env.AGENT_API_SECRET && agentSecret === process.env.AGENT_API_SECRET;
   const authToken = request.cookies.get("auth_token")?.value;
-  if (!requireAuth(authToken)) {
+  if (!agentOk && !requireAuth(authToken)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
