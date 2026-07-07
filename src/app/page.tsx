@@ -5674,6 +5674,69 @@ function TabEnxovalCso() {
 // COMPONENTE: Pesquisa global
 // =====================
 
+function ResponsavelSelector() {
+  const [users, setUsers] = useState<{ id: string; name: string }[]>([]);
+  const [current, setCurrent] = useState<{ id: string; name: string } | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/responsavel")
+      .then((r) => r.json())
+      .then((d) => { if (d.success) setCurrent(d.responsavel); })
+      .catch(() => {});
+  }, []);
+
+  const loadUsers = () => {
+    if (loaded) return;
+    fetch("/api/pipe-users")
+      .then((r) => r.json())
+      .then((d) => { if (d.success) { setUsers(d.users); setLoaded(true); } })
+      .catch(() => {});
+  };
+
+  const onChange = async (id: string) => {
+    const u = users.find((x) => x.id === id);
+    if (!u || u.id === current?.id) return;
+    setSaving(true);
+    try {
+      const r = await fetch("/api/responsavel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: u.id, name: u.name }),
+      });
+      const d = await r.json();
+      if (d.success) setCurrent(d.responsavel);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <WithHelp help="Responsável que as Fases 3, 4 e Revisão vão atribuir aos cards. Fica fixo até você mudar aqui.">
+      <div className="mt-1.5 flex items-center gap-1.5">
+        <span className="text-[11px] text-gray-500 whitespace-nowrap">Responsável:</span>
+        <select
+          value={current?.id || ""}
+          onMouseDown={loadUsers}
+          onFocus={loadUsers}
+          onChange={(e) => onChange(e.target.value)}
+          disabled={saving}
+          className="border border-gray-300 rounded-md px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 max-w-[160px] disabled:opacity-50"
+        >
+          {current && !users.some((u) => u.id === current.id) && (
+            <option value={current.id}>{current.name}</option>
+          )}
+          {users.map((u) => (
+            <option key={u.id} value={u.id}>{u.name}</option>
+          ))}
+        </select>
+        {saving && <span className="text-[10px] text-gray-400">salvando…</span>}
+      </div>
+    </WithHelp>
+  );
+}
+
 function GlobalSearch() {
   const [query, setQuery] = useState("");
   const [searching, setSearching] = useState(false);
@@ -5721,6 +5784,7 @@ function GlobalSearch() {
           {searching ? "..." : "Buscar"}
         </button>
       </div>
+      <ResponsavelSelector />
       {results !== null && (
         <div className="absolute top-full mt-1 right-0 bg-white border border-gray-200 rounded-lg shadow-xl z-50 w-80 max-h-72 overflow-y-auto">
           {results.length === 0 ? (

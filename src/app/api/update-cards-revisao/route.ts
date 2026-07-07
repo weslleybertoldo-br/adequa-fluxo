@@ -3,8 +3,9 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   pipefyQuery, fetchAllCardsFromPhase, searchCardInPhase, updateDueDate, updateAssignee, createComment,
   validateCardId, toBrazilDate, formatDateBR, isDueToday, getNextBusinessDayAt22,
-  replaceCommentFupDate, requireAuth, PHASE_3_ID, PHASE_4_ID, WESLLEY_USER_ID,
+  replaceCommentFupDate, requireAuth, PHASE_3_ID, PHASE_4_ID,
 } from "@/lib/pipefy";
+import { getResponsavel } from "@/lib/responsavel";
 import { SLACK, PIPEFY_TAG } from "@/lib/config";
 
 const SLACK_USER_TOKEN = process.env.SLACK_USER_TOKEN || "";
@@ -226,9 +227,10 @@ export async function POST(req: NextRequest) {
       const card = result?.data?.card;
       const currentLabels: string[] = (card?.labels || []).map((l: any) => l.id);
 
-      // 1. Mudar responsável para Weslley
-      await updateAssignee(validId, WESLLEY_USER_ID);
-      actions.push("Responsável → Weslley");
+      // 1. Mudar responsável para o selecionado
+      const resp = await getResponsavel();
+      await updateAssignee(validId, resp.id);
+      actions.push(`Responsável → ${resp.name}`);
 
       if (isComplexa) {
         // Complexa: +1 dia, tag adequação complexa, não muda de fase

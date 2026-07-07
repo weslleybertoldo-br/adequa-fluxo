@@ -4,8 +4,9 @@ import {
   pipefyQuery, fetchAllCardsFromPhase, searchCardInPhase, updateDueDate, updateAssignee, createComment,
   validateCardId, toBrazilDate, formatDateBR, isDueToday, getNextBusinessDayAt22,
   replaceCommentFupDate, hasSkipTag, requireAuth, fetchPipe1PhaseMap,
-  PHASE_3_ID, WESLLEY_USER_ID,
+  PHASE_3_ID,
 } from "@/lib/pipefy";
+import { getResponsavel, isResponsavel, type Responsavel } from "@/lib/responsavel";
 
 function shouldSkipCard(card: any): { skip: boolean; reason: string } {
   const tagCheck = hasSkipTag(card);
@@ -21,7 +22,7 @@ function shouldSkipCard(card: any): { skip: boolean; reason: string } {
   return { skip: false, reason: "" };
 }
 
-async function processCard(card: any, extraDays = 0, customComment?: string): Promise<{
+async function processCard(card: any, resp: Responsavel, extraDays = 0, customComment?: string): Promise<{
   cardId: string; title: string; action: "skipped" | "updated" | "error"; details: string;
 }> {
   try {
@@ -40,14 +41,11 @@ async function processCard(card: any, extraDays = 0, customComment?: string): Pr
     actions.push(`Vencimento → ${newDueDateBR} 22:00`);
 
     const assignees = card.assignees || [];
-    const isWeslley = assignees.some((a: any) =>
-      a.id === WESLLEY_USER_ID || a.name?.toLowerCase().includes("weslley")
-    );
-    if (!isWeslley) {
-      await updateAssignee(card.id, WESLLEY_USER_ID);
-      actions.push("Responsável → Weslley Bertoldo");
+    if (!isResponsavel(assignees, resp)) {
+      await updateAssignee(card.id, resp.id);
+      actions.push(`Responsável → ${resp.name}`);
     } else {
-      actions.push("Responsável mantido (Weslley)");
+      actions.push(`Responsável mantido (${resp.name})`);
     }
 
     if (customComment) {
@@ -152,7 +150,8 @@ export async function POST(req: NextRequest) {
     const card = result?.data?.card;
     if (!card) return NextResponse.json({ error: "Card não encontrado" }, { status: 404 });
 
-    const processResult = await processCard(card, extraDays, customComment);
+    const resp = await getResponsavel();
+    const processResult = await processCard(card, resp, extraDays, customComment);
     return NextResponse.json({ success: true, ...processResult });
   } catch (err: unknown) {
     return errorResponse(err);

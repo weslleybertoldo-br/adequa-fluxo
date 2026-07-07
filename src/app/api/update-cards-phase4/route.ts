@@ -3,8 +3,9 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   pipefyQuery, fetchAllCardsFromPhase, searchCardInPhase, updateDueDate, updateAssignee, createComment,
   validateCardId, toBrazilDate, formatDateBR, isDueToday, getNextBusinessDayAt22,
-  replaceCommentFupDate, requireAuth, fetchPipe1PhaseMap, PHASE_4_ID, WESLLEY_USER_ID,
+  replaceCommentFupDate, requireAuth, fetchPipe1PhaseMap, PHASE_4_ID,
 } from "@/lib/pipefy";
+import { getResponsavel, isResponsavel, type Responsavel } from "@/lib/responsavel";
 import { PIPEFY_TAG } from "@/lib/config";
 import { getSectionStatus } from "@/lib/comment-parser";
 
@@ -12,14 +13,11 @@ const TAG_ITENS_PEQUENOS = PIPEFY_TAG.ITENS_PEQUENOS;
 const TAG_MANUT_PEQUENAS = PIPEFY_TAG.MANUT_PEQUENAS;
 const TAG_PIN = "312148103";
 
-function shouldSkipCard(card: any): { skip: boolean; reason: string } {
+function shouldSkipCard(card: any, resp: Responsavel): { skip: boolean; reason: string } {
   const assignees = card.assignees || [];
-  const isWeslley = assignees.some((a: any) =>
-    a.name?.toLowerCase().includes("weslley") || a.id === "305932218"
-  );
-  if (!isWeslley) {
-    const resp = assignees.map((a: any) => a.name).join(", ") || "Sem responsável";
-    return { skip: true, reason: `Responsável: ${resp} (não é Weslley)` };
+  if (!isResponsavel(assignees, resp)) {
+    const atual = assignees.map((a: any) => a.name).join(", ") || "Sem responsável";
+    return { skip: true, reason: `Responsável: ${atual} (não é ${resp.name})` };
   }
   if (!card.due_date) return { skip: true, reason: "Sem vencimento definido" };
   if (!isDueToday(card.due_date)) {
@@ -29,13 +27,13 @@ function shouldSkipCard(card: any): { skip: boolean; reason: string } {
   return { skip: false, reason: "" };
 }
 
-async function processCard(card: any, extraDays = 0, customComment?: string): Promise<{
+async function processCard(card: any, resp: Responsavel, extraDays = 0, customComment?: string): Promise<{
   cardId: string; title: string; action: "skipped" | "updated" | "error"; details: string;
 }> {
   try {
     // Se tem customComment, não pula (é envio manual)
     if (!customComment) {
-      const skipCheck = shouldSkipCard(card);
+      const skipCheck = shouldSkipCard(card, resp);
       if (skipCheck.skip) {
         return { cardId: card.id, title: card.title, action: "skipped", details: skipCheck.reason };
       }
@@ -48,15 +46,12 @@ async function processCard(card: any, extraDays = 0, customComment?: string): Pr
     await updateDueDate(card.id, newDueDate);
     actions.push(`Vencimento → ${newDueDateBR} 22:00`);
 
-    // Atualizar responsável para Weslley (só no envio manual)
+    // Atualizar responsável (só no envio manual)
     if (customComment) {
       const assignees = card.assignees || [];
-      const isWeslley = assignees.some((a: any) =>
-        a.id === WESLLEY_USER_ID || a.name?.toLowerCase().includes("weslley")
-      );
-      if (!isWeslley) {
-        await updateAssignee(card.id, WESLLEY_USER_ID);
-        actions.push("Responsável → Weslley Bertoldo");
+      if (!isResponsavel(assignees, resp)) {
+        await updateAssignee(card.id, resp.id);
+        actions.push(`Responsável → ${resp.name}`);
       }
     }
 
@@ -128,6 +123,7 @@ export async function GET(req: NextRequest) {
   }
   try {
     const search = req.nextUrl.searchParams.get("search");
+    const resp = await getResponsavel();
 
     if (search) {
       const [card, pipe1Map] = await Promise.all([
@@ -135,7 +131,7 @@ export async function GET(req: NextRequest) {
         fetchPipe1PhaseMap(),
       ]);
       if (!card) return NextResponse.json({ success: true, totalCards: 0, toUpdate: 0, toSkip: 0, cards: [] });
-      const skipCheck = shouldSkipCard(card);
+      const skipCheck = shouldSkipCard(card, resp);
       return NextResponse.json({
         success: true, totalCards: 1, toUpdate: skipCheck.skip ? 0 : 1, toSkip: skipCheck.skip ? 1 : 0,
         cards: [{
@@ -152,7 +148,7 @@ export async function GET(req: NextRequest) {
       fetchAllCardsFromPhase(PHASE_4_ID),
       fetchPipe1PhaseMap(),
     ]);
-    const skipMap = cards.map((c) => ({ card: c, ...shouldSkipCard(c) }));
+    const skipMap = cards.map((c) => ({ card: c, ...shouldSkipCard(c, resp) }));
 
     return NextResponse.json({
       success: true,
@@ -179,10 +175,11 @@ export async function GET(req: NextRequest) {
           };
         })
         .sort((a, b) => {
-          // Cards com outro responsável (não Weslley) primeiro
-          const aIsWeslley = a.assignees.some((n: string) => n.toLowerCase().includes("weslley"));
-          const bIsWeslley = b.assignees.some((n: string) => n.toLowerCase().includes("weslley"));
-          if (aIsWeslley !== bIsWeslley) return aIsWeslley ? 1 : -1;
+          // Cards com outro responsável (não o selecionado) primeiro
+          const nome = resp.name.toLowerCase();
+          const aIsResp = a.assignees.some((n: string) => n.toLowerCase().includes(nome));
+          const bIsResp = b.assignees.some((n: string) => n.toLowerCase().includes(nome));
+          if (aIsResp !== bIsResp) return aIsResp ? 1 : -1;
           return a.title.localeCompare(b.title);
         }),
     });
@@ -211,7 +208,8 @@ export async function POST(req: NextRequest) {
     const card = result?.data?.card;
     if (!card) return NextResponse.json({ error: "Card não encontrado" }, { status: 404 });
 
-    const processResult = await processCard(card, extraDays, customComment);
+    const resp = await getResponsavel();
+    const processResult = await processCard(card, resp, extraDays, customComment);
     return NextResponse.json({ success: true, ...processResult });
   } catch (err: unknown) {
     return errorResponse(err);
