@@ -38,7 +38,7 @@ const CONCLUDED_PHASE_ID = PIPEFY_PHASE.CONCLUDED;
 const SLACK_TOKEN = process.env.SLACK_BOT_TOKEN || "";
 const SLACK_CHANNEL_ID = SLACK.CHANNEL_ENXOVAL;
 const BRUNO_SLACK_ID = SLACK.USER_BRUNO;
-const WESLLEY_SLACK_ID = SLACK.USER_WESLLEY;
+const ANDREZA_SLACK_ID = SLACK.USER_ANDREZA;
 
 // Tags de enxoval/itens/manutenção
 const TAG_COMPRAR_ENXOVAL = PIPEFY_TAG.COMPRAR_ENXOVAL;
@@ -369,7 +369,7 @@ export async function POST(req: NextRequest) {
                 text: { type: "plain_text", text: "Despesa lançada", emoji: true },
                 style: "primary",
                 action_id: "despesa_lancada",
-                value: WESLLEY_SLACK_ID,
+                value: ANDREZA_SLACK_ID,
               },
             ],
           },

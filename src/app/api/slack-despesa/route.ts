@@ -6,7 +6,7 @@ import { SLACK } from "@/lib/config";
 const SLACK_TOKEN = process.env.SLACK_BOT_TOKEN || "";
 const CHANNEL_ID = SLACK.CHANNEL_ENXOVAL; // despesas-implantação
 const BRUNO_ID = SLACK.USER_BRUNO;
-const WESLLEY_ID = SLACK.USER_WESLLEY;
+const ANDREZA_ID = SLACK.USER_ANDREZA;
 
 export async function POST(req: NextRequest) {
   if (!requireAuth(req.cookies.get("auth_token")?.value)) {
@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
             text: { type: "plain_text", text: "Despesa lançada", emoji: true },
             style: "primary",
             action_id: "despesa_lancada",
-            value: WESLLEY_ID,
+            value: ANDREZA_ID,
           },
         ],
       },
